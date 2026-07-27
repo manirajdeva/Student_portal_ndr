@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.ndredtech.interviewportal",
+      "sha256_cert_fingerprints": [
+        "8A:AE:2E:10:2A:02:B6:A0:FF:9F:24:9C:B9:36:45:87:B7:C2:5D:4B:F1:23:F3:CD:ED:36:05:8F:3F:12:B4:D1"
+      ]
+    }
+  }
+]
