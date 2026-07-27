@@ -158,9 +158,6 @@ function initLogin() {
 
   initPasswordToggles();
 
-  // Role toggle is a visual cue only — the account's real role (from the
-  // Users sheet) always decides where login actually lands; picking
-  // "Admin" here with a student account still logs in as a student.
   const roleCopy = {
     Student: { heading: 'Student Sign In', sub: 'Sign in to view and book your interview slots.' },
     Admin: { heading: 'Admin Sign In', sub: 'Sign in to manage students, bookings and slots.' }
@@ -182,10 +179,18 @@ function initLogin() {
     const password = document.getElementById('login-password').value;
     setButtonLoading(btn, true);
 
+    const selectedRole = document.querySelector('.role-toggle-btn.active').getAttribute('data-role');
+
     api('login', username, password)
       .then((res) => {
         setButtonLoading(btn, false, 'Sign In');
         if (!res.success) { errorEl.textContent = res.message; return; }
+        if (res.role !== selectedRole) {
+          api('logout', res.token); // don't leave an unused session behind
+          errorEl.textContent = 'That account is not a ' + selectedRole + ' account. Switch to ' +
+            res.role + ' above and try again.';
+          return;
+        }
         Session.token = res.token;
         Session.role = res.role;
         Session.fullName = res.fullName;
