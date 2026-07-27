@@ -93,6 +93,8 @@ const API_FUNCTIONS = {
   getMyBookings: getMyBookings,
   cancelMyBooking: cancelMyBooking,
   rescheduleMyBooking: rescheduleMyBooking,
+  studentBootstrap: studentBootstrap,
+  adminBootstrap: adminBootstrap,
   getDashboardStats: getDashboardStats,
   listStudents: listStudents,
   addStudent: addStudent,

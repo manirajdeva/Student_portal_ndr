@@ -63,45 +63,6 @@ function api(fnName, ...args) {
 }
 
 // ---------------------------------------------------------
-// Auth guard — call at the top of admin/student pages. Confirms the
-// stored token is still valid (via whoAmI), redirects to login.html
-// if not, and redirects to the correct role's page if the token
-// belongs to the wrong role for this page.
-// ---------------------------------------------------------
-function requireAuth(expectedRole) {
-  if (!Session.token) {
-    window.location.href = 'login.html';
-    return Promise.reject(new Error('Not logged in'));
-  }
-  return api('whoAmI', Session.token)
-    .then((session) => {
-      if (expectedRole && session.role !== expectedRole) {
-        window.location.href = session.role === 'Admin' ? 'admin.html' : 'student.html';
-        return Promise.reject(new Error('Wrong role for this page'));
-      }
-      Session.fullName = session.fullName;
-      Session.role = session.role;
-      document.querySelectorAll('[data-user-fullname]').forEach((el) => { el.textContent = session.fullName; });
-      return session;
-    })
-    .catch((err) => {
-      // Only treat this as "you're logged out" when the server explicitly
-      // said the session is invalid/expired. A transient network blip, the
-      // phone waking a backgrounded tab, or a slow Apps Script cold start
-      // can all make this request fail too — those shouldn't wipe a
-      // perfectly valid token and boot the user back to the login page.
-      const isAuthError = /session has expired|log in again|not logged in/i.test(err.message || '');
-      if (isAuthError) {
-        Session.clear();
-        window.location.href = 'login.html';
-      } else {
-        toast(err.message || 'Could not reach the server. Please check your connection and try again.', 'error');
-      }
-      throw err;
-    });
-}
-
-// ---------------------------------------------------------
 // Toasts + loading overlay
 // ---------------------------------------------------------
 function toast(message, type) {
@@ -272,11 +233,16 @@ function renderCalendar(containerEl, viewDate, options) {
     </div>
   `;
 
+  // preloadedSummary only applies to this exact render call (the initial
+  // one) — navigating months must always fetch fresh data, so it's
+  // stripped before wiring up the nav buttons' recursive calls.
+  const { preloadedSummary, ...navOptions } = options;
+
   containerEl.querySelector('[data-nav="-1"]').onclick = () => {
-    renderCalendar(containerEl, new Date(year, month - 1, 1), options);
+    renderCalendar(containerEl, new Date(year, month - 1, 1), navOptions);
   };
   containerEl.querySelector('[data-nav="1"]').onclick = () => {
-    renderCalendar(containerEl, new Date(year, month + 1, 1), options);
+    renderCalendar(containerEl, new Date(year, month + 1, 1), navOptions);
   };
 
   const grid = containerEl.querySelector('.calendar-grid');
@@ -299,7 +265,9 @@ function renderCalendar(containerEl, viewDate, options) {
     }
   };
 
-  if (options.summaryFetcher) {
+  if (preloadedSummary) {
+    paint(preloadedSummary);
+  } else if (options.summaryFetcher) {
     options.summaryFetcher(startStr, endStr).then(paint).catch(() => paint({}));
   } else {
     paint({});
@@ -316,20 +284,53 @@ function toISO(d) {
 let studentSelectedDate = null;
 
 function initStudent() {
-  requireAuth('Student').then(() => {
+  if (!Session.token) { window.location.href = 'login.html'; return; }
+
+  const now = new Date();
+  const calStart = toISO(new Date(now.getFullYear(), now.getMonth(), 1));
+  const calEnd = toISO(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+
+  api('studentBootstrap', Session.token, calStart, calEnd).then((data) => {
+    if (data.redirect) { window.location.href = data.redirect; return; }
+    applySession(data.session);
+
     bindSidebarNav();
     document.getElementById('logout-btn').addEventListener('click', doLogout);
 
-    renderCalendar(document.getElementById('student-calendar'), new Date(), {
+    renderCalendar(document.getElementById('student-calendar'), now, {
       selectedDate: studentSelectedDate,
       onSelectDate: (dateStr) => { studentSelectedDate = dateStr; loadSlotsForDate(dateStr); },
-      summaryFetcher: (start, end) => api('getCalendarSummary', Session.token, start, end)
+      summaryFetcher: (start, end) => api('getCalendarSummary', Session.token, start, end),
+      preloadedSummary: data.calendarSummary
     });
 
     document.getElementById('booking-form').addEventListener('submit', submitBooking);
     document.getElementById('confirm-close-btn').addEventListener('click', closeConfirmModal);
-    loadMyBookings();
-  });
+    renderMyBookings(data.myBookings);
+  }).catch(handleBootstrapError);
+}
+
+/**
+ * Shared by adminBootstrap/studentBootstrap catch blocks. Only treats
+ * this as "you're logged out" when the server explicitly says the
+ * session is invalid/expired — a transient network blip or a slow
+ * Apps Script cold start can also make this call fail, and those
+ * shouldn't wipe a perfectly valid token and boot the user out.
+ */
+function handleBootstrapError(err) {
+  const isAuthError = /session has expired|log in again|not logged in/i.test(err.message || '');
+  if (isAuthError) {
+    Session.clear();
+    window.location.href = 'login.html';
+  } else {
+    toast(err.message || 'Could not reach the server. Please check your connection and try again.', 'error');
+  }
+}
+
+function applySession(session) {
+  Session.fullName = session.fullName;
+  Session.role = session.role;
+  document.querySelectorAll('[data-user-fullname]').forEach((el) => { el.textContent = session.fullName; });
 }
 
 function loadSlotsForDate(dateStr) {
@@ -415,9 +416,13 @@ function closeConfirmModal() {
 function loadMyBookings() {
   const wrap = document.getElementById('my-bookings-wrap');
   wrap.innerHTML = '<p class="empty-state"><span class="spinner"></span> Loading...</p>';
-  api('getMyBookings', Session.token).then((rows) => {
-    if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No bookings yet.</p>'; return; }
-    wrap.innerHTML = rows.map((b) => `
+  api('getMyBookings', Session.token).then(renderMyBookings);
+}
+
+function renderMyBookings(rows) {
+  const wrap = document.getElementById('my-bookings-wrap');
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No bookings yet.</p>'; return; }
+  wrap.innerHTML = rows.map((b) => `
       <div class="panel" style="margin-bottom:10px;">
         <div class="flex" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
           <div>
@@ -434,7 +439,6 @@ function loadMyBookings() {
         </div>` : ''}
       </div>
     `).join('');
-  });
 }
 
 function cancelBooking(bookingId) {
@@ -485,14 +489,19 @@ function loadRescheduleSlots(dateStr) {
 // ADMIN PAGE
 // ===========================================================
 function initAdmin() {
-  requireAuth('Admin').then(() => {
+  if (!Session.token) { window.location.href = 'login.html'; return; }
+
+  api('adminBootstrap', Session.token).then((data) => {
+    if (data.redirect) { window.location.href = data.redirect; return; }
+    applySession(data.session);
+
     bindSidebarNav();
     document.getElementById('logout-btn').addEventListener('click', doLogout);
 
-    loadDashboard();
-    loadStudentsTable();
-    loadBookingsTable();
-    loadBlockedDates();
+    renderDashboard(data.stats);
+    renderStudentsTable(data.students);
+    renderBookingsTable(data.bookings);
+    renderBlockedDates(data.blockedDates);
 
     document.getElementById('add-student-form').addEventListener('submit', handleAddStudent);
     document.getElementById('add-admin-form').addEventListener('submit', handleAddAdmin);
@@ -501,52 +510,56 @@ function initAdmin() {
     document.getElementById('search-bookings-form').addEventListener('submit', handleSearchBookings);
     document.getElementById('block-date-form').addEventListener('submit', handleBlockDate);
     document.getElementById('generate-slots-form').addEventListener('submit', handleGenerateSlots);
-  });
+  }).catch(handleBootstrapError);
 }
 
 function loadDashboard() {
-  api('getDashboardStats', Session.token).then((s) => {
-    document.getElementById('stat-total-students').textContent = s.totalStudents;
-    document.getElementById('stat-today-bookings').textContent = s.todaysBookingsCount;
-    document.getElementById('stat-upcoming').textContent = s.upcomingCount;
-    document.getElementById('stat-available-slots').textContent = s.availableSlotsCount;
+  api('getDashboardStats', Session.token).then(renderDashboard);
+}
 
-    const list = document.getElementById('upcoming-preview');
-    if (!s.upcomingPreview.length) {
-      list.innerHTML = '<p class="empty-state">No upcoming interviews.</p>';
-    } else {
-      list.innerHTML = s.upcomingPreview.map((b) => `
-        <div class="flex" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-          <span>${escapeHtml(b['Student Name'])} · ${escapeHtml(b['Company Name'])}</span>
-          <span class="muted text-sm">${fmtDateLabel(b['Interview Date'])} ${to12h(b['Time Slot'])}</span>
-        </div>
-      `).join('');
-    }
-  });
+function renderDashboard(s) {
+  document.getElementById('stat-total-students').textContent = s.totalStudents;
+  document.getElementById('stat-today-bookings').textContent = s.todaysBookingsCount;
+  document.getElementById('stat-upcoming').textContent = s.upcomingCount;
+  document.getElementById('stat-available-slots').textContent = s.availableSlotsCount;
+
+  const list = document.getElementById('upcoming-preview');
+  if (!s.upcomingPreview.length) {
+    list.innerHTML = '<p class="empty-state">No upcoming interviews.</p>';
+  } else {
+    list.innerHTML = s.upcomingPreview.map((b) => `
+      <div class="flex" style="justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+        <span>${escapeHtml(b['Student Name'])} · ${escapeHtml(b['Company Name'])}</span>
+        <span class="muted text-sm">${fmtDateLabel(b['Interview Date'])} ${to12h(b['Time Slot'])}</span>
+      </div>
+    `).join('');
+  }
 }
 
 let studentsCache = [];
 
 function loadStudentsTable() {
+  api('listStudents', Session.token).then(renderStudentsTable);
+}
+
+function renderStudentsTable(students) {
   const wrap = document.getElementById('students-table-wrap');
-  api('listStudents', Session.token).then((students) => {
-    studentsCache = students;
-    if (!students.length) { wrap.innerHTML = '<p class="empty-state">No students yet.</p>'; return; }
-    wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
-      <th>Username</th><th>Full Name</th><th>Email</th><th>Status</th><th></th>
-    </tr></thead><tbody>` + students.map((st) => `
-      <tr>
-        <td>${escapeHtml(st.Username)}</td>
-        <td>${escapeHtml(st.FullName)}</td>
-        <td>${escapeHtml(st.Email || '—')}</td>
-        <td><span class="pill ${st.Status.toLowerCase()}">${st.Status}</span></td>
-        <td class="flex gap-8">
-          <button class="btn btn-outline btn-sm" onclick="openEditStudentModal('${st.Username}')">Edit</button>
-          <button class="btn btn-outline btn-sm" onclick="toggleStudentStatus('${st.Username}','${st.Status}')">${st.Status === 'Active' ? 'Deactivate' : 'Activate'}</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteStudentRow('${st.Username}')">Delete</button>
-        </td>
-      </tr>`).join('') + '</tbody></table></div>';
-  });
+  studentsCache = students;
+  if (!students.length) { wrap.innerHTML = '<p class="empty-state">No students yet.</p>'; return; }
+  wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+    <th>Username</th><th>Full Name</th><th>Email</th><th>Status</th><th></th>
+  </tr></thead><tbody>` + students.map((st) => `
+    <tr>
+      <td>${escapeHtml(st.Username)}</td>
+      <td>${escapeHtml(st.FullName)}</td>
+      <td>${escapeHtml(st.Email || '—')}</td>
+      <td><span class="pill ${st.Status.toLowerCase()}">${st.Status}</span></td>
+      <td class="flex gap-8">
+        <button class="btn btn-outline btn-sm" onclick="openEditStudentModal('${st.Username}')">Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="toggleStudentStatus('${st.Username}','${st.Status}')">${st.Status === 'Active' ? 'Deactivate' : 'Activate'}</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteStudentRow('${st.Username}')">Delete</button>
+      </td>
+    </tr>`).join('') + '</tbody></table></div>';
 }
 
 function handleAddStudent(e) {
@@ -644,29 +657,29 @@ function deleteStudentRow(username) {
 let bookingsCache = [];
 
 function loadBookingsTable(rows) {
-  const render = (rows) => {
-    bookingsCache = rows;
-    const wrap = document.getElementById('bookings-table-wrap');
-    if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No bookings found.</p>'; return; }
-    wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
-      <th>Student</th><th>Company</th><th>Level</th><th>Date</th><th>Time</th><th>Mode</th><th>Status</th><th></th>
-    </tr></thead><tbody>` + rows.map((b) => `
-      <tr>
-        <td>${escapeHtml(b['Student Name'])}</td>
-        <td>${escapeHtml(b['Company Name'])}</td>
-        <td>${escapeHtml(b['Interview Level'])}</td>
-        <td>${fmtDateLabel(b['Interview Date'])}</td>
-        <td>${to12h(b['Time Slot'])}</td>
-        <td>${escapeHtml(b['Interview Mode'])}</td>
-        <td><span class="pill ${b.Status.toLowerCase()}">${b.Status}</span></td>
-        <td class="flex gap-8">${b.Status === 'Confirmed' ? `
-          <button class="btn btn-outline btn-sm" onclick="openEditBookingModal('${b['Booking ID']}')">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="adminCancel('${b['Booking ID']}')">Cancel</button>` : ''}</td>
-      </tr>`).join('') + '</tbody></table></div>';
-  };
+  if (rows) { renderBookingsTable(rows); return; }
+  api('listAllBookings', Session.token).then(renderBookingsTable);
+}
 
-  if (rows) { render(rows); return; }
-  api('listAllBookings', Session.token).then(render);
+function renderBookingsTable(rows) {
+  bookingsCache = rows;
+  const wrap = document.getElementById('bookings-table-wrap');
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No bookings found.</p>'; return; }
+  wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+    <th>Student</th><th>Company</th><th>Level</th><th>Date</th><th>Time</th><th>Mode</th><th>Status</th><th></th>
+  </tr></thead><tbody>` + rows.map((b) => `
+    <tr>
+      <td>${escapeHtml(b['Student Name'])}</td>
+      <td>${escapeHtml(b['Company Name'])}</td>
+      <td>${escapeHtml(b['Interview Level'])}</td>
+      <td>${fmtDateLabel(b['Interview Date'])}</td>
+      <td>${to12h(b['Time Slot'])}</td>
+      <td>${escapeHtml(b['Interview Mode'])}</td>
+      <td><span class="pill ${b.Status.toLowerCase()}">${b.Status}</span></td>
+      <td class="flex gap-8">${b.Status === 'Confirmed' ? `
+        <button class="btn btn-outline btn-sm" onclick="openEditBookingModal('${b['Booking ID']}')">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="adminCancel('${b['Booking ID']}')">Cancel</button>` : ''}</td>
+    </tr>`).join('') + '</tbody></table></div>';
 }
 
 function openEditBookingModal(bookingId) {
@@ -739,16 +752,18 @@ function handleBlockDate(e) {
 }
 
 function loadBlockedDates() {
+  api('listBlockedDates', Session.token).then(renderBlockedDates);
+}
+
+function renderBlockedDates(rows) {
   const wrap = document.getElementById('blocked-dates-wrap');
-  api('listBlockedDates', Session.token).then((rows) => {
-    if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No blocked dates coming up.</p>'; return; }
-    wrap.innerHTML = rows.map((r) => `
-      <div class="flex" style="justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
-        <span>${fmtDateLabel(r.date)} <span class="muted text-sm">(${r.blockedCount}/${r.totalCount} slots blocked)</span></span>
-        <button class="btn btn-outline btn-sm" onclick="unblockDateRow('${r.date}')">Unblock</button>
-      </div>
-    `).join('');
-  });
+  if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No blocked dates coming up.</p>'; return; }
+  wrap.innerHTML = rows.map((r) => `
+    <div class="flex" style="justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+      <span>${fmtDateLabel(r.date)} <span class="muted text-sm">(${r.blockedCount}/${r.totalCount} slots blocked)</span></span>
+      <button class="btn btn-outline btn-sm" onclick="unblockDateRow('${r.date}')">Unblock</button>
+    </div>
+  `).join('');
 }
 function unblockDateRow(date) {
   api('unblockDate', Session.token, date).then((res) => {

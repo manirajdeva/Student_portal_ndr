@@ -10,6 +10,28 @@
 
 // ==================== DASHBOARD ====================
 
+/**
+ * Combines the session check (normally a separate whoAmI call) with every
+ * data fetch the admin dashboard needs on first load, into a single round
+ * trip. Apps Script web apps have no persistent warm server — each
+ * request pays its own startup cost — so collapsing 5 separate calls
+ * (whoAmI + stats + students + bookings + blockedDates) into 1 is what
+ * actually cuts the "login feels slow" wait, not just faster code.
+ */
+function adminBootstrap(token) {
+  const session = requireRole(token, null);
+  if (session.role !== 'Admin') {
+    return { redirect: 'student.html' };
+  }
+  return {
+    session: session,
+    stats: getDashboardStats(token),
+    students: listStudents(token),
+    bookings: listAllBookings(token),
+    blockedDates: listBlockedDates(token)
+  };
+}
+
 function getDashboardStats(token) {
   requireRole(token, 'Admin');
 

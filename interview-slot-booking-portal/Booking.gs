@@ -195,6 +195,24 @@ function findSlotRow(slotSheet, date, time) {
   return -1;
 }
 
+/**
+ * Combines the session check (normally a separate whoAmI call) with the
+ * student page's initial data (their bookings + the current month's
+ * calendar summary) into a single round trip — see adminBootstrap in
+ * Admin.gs for why this matters on Apps Script specifically.
+ */
+function studentBootstrap(token, calStart, calEnd) {
+  const session = requireRole(token, null);
+  if (session.role !== 'Student') {
+    return { redirect: 'admin.html' };
+  }
+  return {
+    session: session,
+    myBookings: getMyBookings(token),
+    calendarSummary: getCalendarSummary(token, calStart, calEnd)
+  };
+}
+
 /** Returns all bookings (past + upcoming) belonging to the logged-in student. */
 function getMyBookings(token) {
   const session = requireRole(token, 'Student');
