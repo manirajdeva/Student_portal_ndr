@@ -66,15 +66,22 @@ function addStudent(token, student) {
   return { success: true, message: 'Student added.' };
 }
 
+/**
+ * Edits a student's full name / email, and optionally resets their
+ * password (only when a non-empty new password is supplied).
+ * Username and role are immutable via this endpoint.
+ */
 function editStudent(token, username, updates) {
   requireRole(token, 'Admin');
+  updates = updates || {};
   const sheet = getSheet(CONFIG.SHEET_USERS);
   const row = findRowIndexByColumnValue(sheet, 'Username', username);
   if (row === -1) throw new Error('Student not found.');
 
-  const patch = {};
-  if (updates.fullName) patch.FullName = updates.fullName;
-  if (updates.email !== undefined) patch.Email = updates.email;
+  const fullName = (updates.fullName || '').trim();
+  if (!fullName) throw new Error('Full name is required.');
+
+  const patch = { FullName: fullName, Email: (updates.email || '').trim() };
   if (updates.password) patch.PasswordHash = hashPassword(updates.password);
 
   updateRowByHeaders(sheet, row, SCHEMA.Users, patch);
@@ -105,7 +112,7 @@ function setStudentStatus(token, username, status) {
 function listAllBookings(token) {
   requireRole(token, 'Admin');
   return sheetToObjects(getSheet(CONFIG.SHEET_BOOKINGS))
-    .sort((a, b) => (b['Interview Date'] + b['Time Slot']).localeCompare(a['Interview Date'] + a['Time Slot']))
+    .sort((a, b) => (a['Interview Date'] + a['Time Slot']).localeCompare(b['Interview Date'] + b['Time Slot']))
     .map(stripRowMeta);
 }
 
@@ -130,7 +137,7 @@ function searchBookings(token, filters) {
       if (date && b['Interview Date'] !== date) return false;
       return true;
     })
-    .sort((a, b) => (b['Interview Date'] + b['Time Slot']).localeCompare(a['Interview Date'] + a['Time Slot']))
+    .sort((a, b) => (a['Interview Date'] + a['Time Slot']).localeCompare(b['Interview Date'] + b['Time Slot']))
     .map(stripRowMeta);
 }
 
@@ -142,25 +149,20 @@ function adminCancelBooking(token, bookingId) {
 /** Admin can edit any editable field on a booking (does not move the slot — use reschedule pattern for that). */
 function adminEditBooking(token, bookingId, updates) {
   requireRole(token, 'Admin');
+  updates = updates || {};
   const sheet = getSheet(CONFIG.SHEET_BOOKINGS);
   const row = findRowIndexByColumnValue(sheet, 'Booking ID', bookingId);
   if (row === -1) throw new Error('Booking not found.');
 
   const patch = {};
-  ['Student Name', 'Company Name', 'Interview Level', 'Interview Mode', 'Notes'].forEach((field) => {
-    const key = toCamel(field);
-    if (updates[key] !== undefined) patch[field] = updates[key];
-  });
+  if (updates.studentName !== undefined) patch['Student Name'] = updates.studentName;
+  if (updates.companyName !== undefined) patch['Company Name'] = updates.companyName;
+  if (updates.interviewLevel !== undefined) patch['Interview Level'] = updates.interviewLevel;
+  if (updates.mode !== undefined) patch['Interview Mode'] = updates.mode;
+  if (updates.notes !== undefined) patch['Notes'] = updates.notes;
+
   updateRowByHeaders(sheet, row, SCHEMA.Bookings, patch);
   return { success: true, message: 'Booking updated.' };
-}
-
-function toCamel(header) {
-  const map = {
-    'Student Name': 'studentName', 'Company Name': 'companyName', 'Interview Level': 'interviewLevel',
-    'Interview Mode': 'mode', 'Notes': 'notes'
-  };
-  return map[header] || header;
 }
 
 // ==================== HOLIDAYS / BLOCKED DATES ====================
@@ -183,7 +185,7 @@ function blockDate(token, dateStr) {
 
   let blockedCount = 0, alreadyBookedCount = 0;
   for (let r = 1; r < values.length; r++) {
-    if (values[r][dateIdx] !== dateStr) continue;
+    if (normalizeDateCell(values[r][dateIdx], 'Slots', 'Date') !== dateStr) continue;
     const status = values[r][statusIdx];
     if (status === 'Booked') {
       alreadyBookedCount++;
@@ -212,7 +214,7 @@ function unblockDate(token, dateStr) {
 
   let count = 0;
   for (let r = 1; r < values.length; r++) {
-    if (values[r][dateIdx] !== dateStr) continue;
+    if (normalizeDateCell(values[r][dateIdx], 'Slots', 'Date') !== dateStr) continue;
     if (values[r][statusIdx] === 'Blocked') {
       sheet.getRange(r + 1, statusIdx + 1).setValue('Available');
       sheet.getRange(r + 1, updatedIdx + 1).setValue(nowString());

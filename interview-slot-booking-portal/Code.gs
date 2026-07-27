@@ -2,8 +2,8 @@
  * Code.gs
  * ------------------------------------------------------------------
  * Entry point for the Interview Slot Booking Portal web app.
- * Handles routing (doGet), HTML templating includes, Google Sheet
- * bootstrap/schema management, and small shared utility helpers used
+ * Handles routing (doGet), HTML template includes, Google Sheet
+ * bootstrap/schema management, and shared utility helpers used
  * across Auth.gs, Booking.gs and Admin.gs.
  * ------------------------------------------------------------------
  */
@@ -18,8 +18,8 @@ const CONFIG = {
   SLOT_END_HOUR: 22,    // 10:00 PM
   SLOT_INTERVAL_MIN: 30,
 
-  SESSION_DURATION_SEC: 6 * 60 * 60, // 6 hours, CacheService max is 6h
-  ONE_ACTIVE_BOOKING_PER_STUDENT: true, // toggle the "one active booking" rule
+  SESSION_DURATION_SEC: 6 * 60 * 60, // 6 hours — CacheService max is 6h
+  ONE_ACTIVE_BOOKING_PER_STUDENT: false, // toggle the "one active booking" rule
 
   APP_TITLE: 'Interview Slot Booking Portal'
 };
@@ -34,48 +34,121 @@ const SCHEMA = {
   ]
 };
 
-// ==================== WEB APP ROUTING ====================
+/**
+ * Columns whose values LOOK like dates/times to Google Sheets
+ * ("2026-07-28", "07:30", "2026-07-28 14:33:02"). Sheets silently
+ * auto-converts such strings into real Date values on write, which
+ * breaks every strict string comparison in this file (e.g. checking
+ * whether a slot's Date matches the date a student asked for).
+ * getSheet() forces these columns to plain-text format so future
+ * writes are stored verbatim, and normalizeDateCell() defensively
+ * converts any value back to the expected string on read, so already
+ * -written rows keep working even if they were auto-converted before
+ * this fix existed.
+ */
+const DATE_TIME_COLUMNS = {
+  Users: { CreatedOn: 'datetime' },
+  Slots: { Date: 'date', Time: 'time', UpdatedOn: 'datetime' },
+  Bookings: { 'Interview Date': 'date', 'Time Slot': 'time', 'Booked On': 'datetime' }
+};
+
+/** Converts value back to its canonical string form if Sheets stored it as a real Date. */
+function normalizeDateCell(value, sheetName, header) {
+  const kind = (DATE_TIME_COLUMNS[sheetName] || {})[header];
+  if (!kind || !(value instanceof Date)) return value;
+  const tz = Session.getScriptTimeZone();
+  if (kind === 'date') return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  if (kind === 'time') return Utilities.formatDate(value, tz, 'HH:mm');
+  return Utilities.formatDate(value, tz, 'yyyy-MM-dd HH:mm:ss');
+}
+
+/** Converts a 1-based column index (1, 2, 3...) to its A1 letter (A, B, C...). */
+function columnToLetter(column) {
+  let letter = '';
+  while (column > 0) {
+    const rem = (column - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    column = Math.floor((column - 1) / 26);
+  }
+  return letter;
+}
+
+// ==================== JSON API ====================
+// The frontend is a plain static site (hosted outside Apps Script —
+// see docs/) that talks to this project purely over fetch()+POST as
+// a JSON API. This deliberately avoids HtmlService's sandboxed iframe
+// and google.script.run entirely: both depend on storage/postMessage
+// plumbing that Safari's Intelligent Tracking Prevention blocks
+// inside that sandbox, which previously broke login on iOS.
+//
+// Every callable server function is explicitly whitelisted below —
+// nothing is reachable from the client unless it's listed here.
+
+const API_FUNCTIONS = {
+  login: login,
+  logout: logout,
+  whoAmI: whoAmI,
+  getAvailableSlots: getAvailableSlots,
+  getCalendarSummary: getCalendarSummary,
+  bookSlot: bookSlot,
+  getMyBookings: getMyBookings,
+  cancelMyBooking: cancelMyBooking,
+  rescheduleMyBooking: rescheduleMyBooking,
+  getDashboardStats: getDashboardStats,
+  listStudents: listStudents,
+  addStudent: addStudent,
+  editStudent: editStudent,
+  deleteStudent: deleteStudent,
+  setStudentStatus: setStudentStatus,
+  listAllBookings: listAllBookings,
+  searchBookings: searchBookings,
+  adminCancelBooking: adminCancelBooking,
+  adminEditBooking: adminEditBooking,
+  blockDate: blockDate,
+  unblockDate: unblockDate,
+  listBlockedDates: listBlockedDates,
+  bulkGenerateSlots: bulkGenerateSlots
+};
 
 /**
- * Main entry point for all GET requests (page loads / navigation).
- * Routes to login / admin / student pages based on the session token.
- * Query params used:
- *   ?token=<sessionToken>   (optional — required to reach admin/student)
+ * Single JSON entry point for every client action.
+ * Expects a POST body of {"fn": "functionName", "args": [...]}.
+ * Sent as text/plain (not application/json) on purpose — a JSON
+ * Content-Type would trigger a CORS preflight (OPTIONS) request,
+ * which Apps Script web apps cannot answer. text/plain keeps it a
+ * "simple request" per the CORS spec, so the browser skips preflight.
  */
-function doGet(e) {
+function doPost(e) {
   initSheets(); // idempotent — creates sheets/headers if missing
 
-  const params = (e && e.parameter) || {};
-  const token = params.token || '';
-  const session = token ? validateSession(token) : null;
-
-  let templateName;
-  if (!session) {
-    templateName = 'login';
-  } else if (session.role === 'Admin') {
-    templateName = 'admin';
-  } else {
-    templateName = 'student';
+  let body;
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return jsonOutput({ error: 'Invalid request body.' });
   }
 
-  const template = HtmlService.createTemplateFromFile(templateName);
-  template.session = session;              // null if not logged in
-  template.scriptUrl = getScriptUrl();      // base URL for client-side redirects
+  const fn = API_FUNCTIONS[body.fn];
+  if (!fn) {
+    return jsonOutput({ error: 'Unknown function: ' + body.fn });
+  }
 
-  return template.evaluate()
-    .setTitle(CONFIG.APP_TITLE)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  try {
+    const result = fn.apply(null, body.args || []);
+    return jsonOutput({ result: result });
+  } catch (err) {
+    return jsonOutput({ error: err.message || String(err) });
+  }
 }
 
-/** Used inside templates: <?!= include('style'); ?> etc. */
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+/** Simple health check — hitting the deployed URL directly in a browser shows this. */
+function doGet(e) {
+  initSheets();
+  return jsonOutput({ status: 'ok', message: CONFIG.APP_TITLE + ' API is running.' });
 }
 
-/** Returns the deployed web app URL (used for client-side navigation). */
-function getScriptUrl() {
-  return ScriptApp.getService().getUrl();
+function jsonOutput(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ==================== SHEET BOOTSTRAP ====================
@@ -95,6 +168,18 @@ function getSheet(sheetName) {
     sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#0F1626').setFontColor('#FFFFFF');
     sheet.setFrozenRows(1);
   }
+
+  // Force date/time-look-alike columns to plain-text format so Sheets
+  // never auto-converts future writes into real Date values (see
+  // DATE_TIME_COLUMNS above).
+  Object.keys(DATE_TIME_COLUMNS[sheetName] || {}).forEach((header) => {
+    const colIdx = headers.indexOf(header) + 1;
+    if (colIdx > 0) {
+      const colLetter = columnToLetter(colIdx);
+      sheet.getRange(colLetter + ':' + colLetter).setNumberFormat('@');
+    }
+  });
+
   return sheet;
 }
 
@@ -121,7 +206,7 @@ function setupInitialAdmin(username, password, fullName) {
     throw new Error('A user with that username already exists.');
   }
   sheet.appendRow([username, hashPassword(password), 'Admin', fullName, '', 'Active', nowString()]);
-  Logger.log('Admin account created: ' + username + ' / ' + password + ' (please change the password after first login if you add that feature, or recreate the user)');
+  Logger.log('Admin account created: ' + username);
   return { success: true, message: 'Admin account created for ' + username };
 }
 
@@ -133,10 +218,11 @@ function sheetToObjects(sheet) {
   if (values.length < 2) return [];
   const headers = values[0];
   const rows = values.slice(1);
+  const sheetName = sheet.getName();
   return rows
     .map((row, idx) => {
       const obj = {};
-      headers.forEach((h, i) => { obj[h] = row[i]; });
+      headers.forEach((h, i) => { obj[h] = normalizeDateCell(row[i], sheetName, h); });
       obj.__row = idx + 2; // 1-based sheet row number (accounting for header)
       return obj;
     })
@@ -164,6 +250,12 @@ function updateRowByHeaders(sheet, rowNumber, headers, updates) {
   });
 }
 
+function stripRowMeta(obj) {
+  const copy = Object.assign({}, obj);
+  delete copy.__row;
+  return copy;
+}
+
 // ==================== DATE / TIME UTILITIES ====================
 
 function todayStr() {
@@ -183,8 +275,13 @@ function isPastDateTime(dateStr, timeStr) {
 }
 
 function isPastDate(dateStr) {
-  const today = todayStr();
-  return dateStr < today;
+  return dateStr < todayStr();
+}
+
+function addDaysStr(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return Utilities.formatDate(dt, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
 /** Generates HH:mm strings from SLOT_START_HOUR to SLOT_END_HOUR at SLOT_INTERVAL_MIN steps. */

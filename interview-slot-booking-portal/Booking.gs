@@ -51,17 +51,10 @@ function bulkGenerateSlots(token, startDate, endDate) {
   return { success: true, message: created + ' new slot(s) created from ' + startDate + ' to ' + endDate + '.' };
 }
 
-function addDaysStr(dateStr, days) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d + days);
-  return Utilities.formatDate(dt, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-}
-
 /**
  * Returns the list of slots for a date, auto-generating the standard
- * schedule if none exist yet (unless the date is blocked/past).
- * Each item: { time, status } where status is Available/Booked/Blocked.
- * Past time-slots on today's date are marked 'Past' so the UI can grey them out.
+ * schedule if none exist yet (unless the date is in the past).
+ * Each item: { time, status } where status is Available/Booked/Blocked/Past.
  */
 function getAvailableSlots(token, dateStr) {
   requireRole(token, null); // any logged-in user (student or admin)
@@ -85,7 +78,7 @@ function getAvailableSlots(token, dateStr) {
 }
 
 /**
- * Returns a Available/Booked/Blocked/Mixed summary per date for a range,
+ * Returns an available/full/blocked/past summary per date for a range,
  * used to color the calendar month view without loading every slot.
  */
 function getCalendarSummary(token, startDate, endDate) {
@@ -104,7 +97,7 @@ function getCalendarSummary(token, startDate, endDate) {
   const summary = {};
   Object.keys(byDate).forEach((date) => {
     const d = byDate[date];
-    let state = 'none';
+    let state;
     if (isPastDate(date)) state = 'past';
     else if (d.blocked === d.total) state = 'blocked';
     else if (d.available > 0) state = 'available';
@@ -195,7 +188,9 @@ function findSlotRow(slotSheet, date, time) {
   const dateIdx = SCHEMA.Slots.indexOf('Date');
   const timeIdx = SCHEMA.Slots.indexOf('Time');
   for (let r = 1; r < values.length; r++) {
-    if (values[r][dateIdx] === date && values[r][timeIdx] === time) return r + 1;
+    const rowDate = normalizeDateCell(values[r][dateIdx], 'Slots', 'Date');
+    const rowTime = normalizeDateCell(values[r][timeIdx], 'Slots', 'Time');
+    if (rowDate === date && rowTime === time) return r + 1;
   }
   return -1;
 }
@@ -217,7 +212,7 @@ function cancelMyBooking(token, bookingId) {
 }
 
 /**
- * Student reschedules: cancels the old slot and books a new one,
+ * Student reschedules: frees the old slot and books a new one,
  * keeping the same Booking ID and student-supplied details.
  */
 function rescheduleMyBooking(token, bookingId, newDate, newTime) {
@@ -228,7 +223,7 @@ function rescheduleMyBooking(token, bookingId, newDate, newTime) {
 
   const values = bookingSheet.getRange(row, 1, 1, SCHEMA.Bookings.length).getValues()[0];
   const record = {};
-  SCHEMA.Bookings.forEach((h, i) => { record[h] = values[i]; });
+  SCHEMA.Bookings.forEach((h, i) => { record[h] = normalizeDateCell(values[i], 'Bookings', h); });
 
   if (record.Username !== session.username) throw new Error('You can only reschedule your own bookings.');
   if (record.Status !== 'Confirmed') throw new Error('Only confirmed bookings can be rescheduled.');
@@ -275,7 +270,7 @@ function cancelBookingInternal(bookingId, restrictToUsername, isAdmin) {
 
   const values = bookingSheet.getRange(row, 1, 1, SCHEMA.Bookings.length).getValues()[0];
   const record = {};
-  SCHEMA.Bookings.forEach((h, i) => { record[h] = values[i]; });
+  SCHEMA.Bookings.forEach((h, i) => { record[h] = normalizeDateCell(values[i], 'Bookings', h); });
 
   if (!isAdmin && record.Username !== restrictToUsername) {
     throw new Error('You can only cancel your own bookings.');
@@ -293,10 +288,4 @@ function cancelBookingInternal(bookingId, restrictToUsername, isAdmin) {
   }
 
   return { success: true, message: 'Booking cancelled.' };
-}
-
-function stripRowMeta(obj) {
-  const copy = Object.assign({}, obj);
-  delete copy.__row;
-  return copy;
 }

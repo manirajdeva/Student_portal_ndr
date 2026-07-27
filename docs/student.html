@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Interview Slot Booking Portal — Student</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="student">
+  <div id="toast-container"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <p class="brand">BOOKING PORTAL</p>
+      <p class="userline">Signed in as<br><strong data-user-fullname>—</strong></p>
+
+      <button class="nav-item active" data-tab="book">🗓️ Book Interview</button>
+      <button class="nav-item" data-tab="my-bookings">📋 My Bookings</button>
+
+      <div class="nav-spacer"></div>
+      <button class="nav-item" id="logout-btn">⏻ Logout</button>
+    </aside>
+
+    <main class="main-area">
+      <section class="tab-section active" id="tab-book">
+        <h1 class="page-title">Book an Interview Slot</h1>
+        <p class="page-sub">Pick a date, choose an open time, and confirm your details.</p>
+
+        <div style="display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:20px;align-items:start;">
+          <div class="calendar" id="student-calendar"></div>
+
+          <div class="panel">
+            <p class="panel-title">Available times on <span id="selected-date-label">—</span></p>
+            <p class="text-sm muted">7:00 AM – 10:00 PM · green means open, red means already booked.</p>
+            <div id="slot-grid-wrap"><p class="empty-state">Pick a date on the calendar to see available slots.</p></div>
+          </div>
+        </div>
+
+        <!-- Booking modal -->
+        <div class="modal-backdrop" id="booking-modal">
+          <div class="modal-box">
+            <div class="modal-head">
+              <div>
+                <h3>Book this slot</h3>
+                <p class="text-sm muted" id="booking-modal-subtitle"></p>
+              </div>
+              <button type="button" onclick="closeBookingModal()">✕</button>
+            </div>
+            <form id="booking-form">
+              <input type="hidden" id="bk-date">
+              <input type="hidden" id="bk-time">
+              <div class="field"><label>Student name</label><input id="bk-name" required></div>
+              <div class="field"><label>Company name</label><input id="bk-company" required></div>
+              <div class="field">
+                <label>Interview level</label>
+                <select id="bk-level" required>
+                  <option value="Screening">Screening</option>
+                  <option value="Technical - L1">Technical - L1</option>
+                  <option value="Technical - L2">Technical - L2</option>
+                  <option value="Managerial">Managerial</option>
+                  <option value="HR / Final">HR / Final</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Interview mode</label>
+                <select id="bk-mode" required>
+                  <option value="Online">Online</option>
+                  <option value="Offline">Offline</option>
+                </select>
+              </div>
+              <div class="field"><label>Notes (optional)</label><textarea id="bk-notes" rows="2"></textarea></div>
+              <button type="submit" class="btn btn-success btn-block" id="bk-submit-btn">Confirm Booking</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Booking confirmation modal -->
+        <div class="modal-backdrop" id="confirm-modal">
+          <div class="modal-box">
+            <div class="confirm-icon">✓</div>
+            <h3 class="text-center" style="margin-bottom:4px;">Booking confirmed</h3>
+            <p class="text-sm muted text-center" style="margin-bottom:18px;">Here are your interview details.</p>
+            <ul class="confirm-list" id="confirm-list"></ul>
+            <button type="button" class="btn btn-primary btn-block" id="confirm-close-btn">Done</button>
+          </div>
+        </div>
+
+        <!-- Reschedule modal -->
+        <div class="modal-backdrop" id="reschedule-modal">
+          <div class="modal-box" style="max-width:520px;">
+            <div class="modal-head">
+              <h3>Reschedule booking</h3>
+              <button type="button" onclick="closeRescheduleModal()">✕</button>
+            </div>
+            <div class="calendar" id="reschedule-calendar" style="margin-bottom:14px;"></div>
+            <div id="reschedule-slots"><p class="empty-state">Pick a date above.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-section" id="tab-my-bookings">
+        <h1 class="page-title">My Bookings</h1>
+        <p class="page-sub">Your upcoming and past interview bookings.</p>
+        <div id="my-bookings-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="page-loader" class="hidden"><span class="spinner"></span><p>Loading...</p></div>
+
+  <script src="script.js"></script>
+</body>
+</html>

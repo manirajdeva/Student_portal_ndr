@@ -1,32 +1,83 @@
 /* ==========================================================
    script.js — Interview Slot Booking Portal (client-side)
-   Shared across login.html, admin.html and student.html.
-   Each page sets <body data-page="login|admin|student"> and
-   this file dispatches to the matching init function.
+   Static frontend, hosted outside Apps Script (e.g. GitHub Pages).
+   Talks to the Apps Script backend purely via fetch()+POST as a
+   JSON API (see Code.gs doPost) — no google.script.run, no
+   sandboxed iframe, so it works identically on every browser,
+   including iOS Safari (which blocks storage/postMessage inside
+   Apps Script's HtmlService iframe and broke login there).
    ========================================================== */
 
+// Your deployed Apps Script Web App URL (ends in /exec). If you ever
+// create a NEW deployment (rather than a new version of this one),
+// update this to match its URL.
+const API_URL = 'https://script.google.com/macros/s/AKfycbwGEEoKKOVS72lWZ1J1V0MbgpU-3suDkET4cKUY7TvcniEhvwO5kp_NFhfp4LGOu5of/exec';
+
 // ---------------------------------------------------------
-// Session helpers (token lives in localStorage; also echoed
-// in the URL so a full page reload keeps the user logged in)
+// Session helpers. localStorage is safe here — this page is a
+// normal top-level site, not inside Apps Script's sandboxed iframe.
 // ---------------------------------------------------------
 const Session = {
   get token() { return localStorage.getItem('ispb_token') || ''; },
   set token(v) { v ? localStorage.setItem('ispb_token', v) : localStorage.removeItem('ispb_token'); },
   get role() { return localStorage.getItem('ispb_role') || ''; },
   set role(v) { v ? localStorage.setItem('ispb_role', v) : localStorage.removeItem('ispb_role'); },
-  clear() { localStorage.removeItem('ispb_token'); localStorage.removeItem('ispb_role'); }
+  get fullName() { return localStorage.getItem('ispb_fullname') || ''; },
+  set fullName(v) { v ? localStorage.setItem('ispb_fullname', v) : localStorage.removeItem('ispb_fullname'); },
+  clear() {
+    localStorage.removeItem('ispb_token');
+    localStorage.removeItem('ispb_role');
+    localStorage.removeItem('ispb_fullname');
+  }
 };
 
 // ---------------------------------------------------------
-// Promise wrapper around google.script.run
+// JSON API call. Sent as text/plain (fetch's default for a string
+// body) rather than application/json — an application/json request
+// would trigger a CORS preflight (OPTIONS) request, which Apps
+// Script web apps cannot answer. text/plain keeps this a "simple
+// request" per the CORS spec, so the browser skips preflight, while
+// doPost() still parses the body as JSON regardless of the header.
 // ---------------------------------------------------------
 function api(fnName, ...args) {
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler((res) => resolve(res))
-      .withFailureHandler((err) => reject(err))
-      [fnName](...args);
-  });
+  return fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ fn: fnName, args: args })
+  })
+    .then((r) => r.json())
+    .then((json) => {
+      if (json.error) throw new Error(json.error);
+      return json.result;
+    });
+}
+
+// ---------------------------------------------------------
+// Auth guard — call at the top of admin/student pages. Confirms the
+// stored token is still valid (via whoAmI), redirects to login.html
+// if not, and redirects to the correct role's page if the token
+// belongs to the wrong role for this page.
+// ---------------------------------------------------------
+function requireAuth(expectedRole) {
+  if (!Session.token) {
+    window.location.href = 'login.html';
+    return Promise.reject(new Error('Not logged in'));
+  }
+  return api('whoAmI', Session.token)
+    .then((session) => {
+      if (expectedRole && session.role !== expectedRole) {
+        window.location.href = session.role === 'Admin' ? 'admin.html' : 'student.html';
+        return Promise.reject(new Error('Wrong role for this page'));
+      }
+      Session.fullName = session.fullName;
+      Session.role = session.role;
+      document.querySelectorAll('[data-user-fullname]').forEach((el) => { el.textContent = session.fullName; });
+      return session;
+    })
+    .catch((err) => {
+      Session.clear();
+      window.location.href = 'login.html';
+      throw err;
+    });
 }
 
 // ---------------------------------------------------------
@@ -73,6 +124,10 @@ function todayISO() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 // ===========================================================
 // PAGE DISPATCH
@@ -85,15 +140,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function goHome() {
-  // Reload with the token so doGet() can route by role.
-  const base = window.APP_SCRIPT_URL || '';
-  window.top.location.href = base + '?token=' + encodeURIComponent(Session.token);
+  window.location.href = Session.role === 'Admin' ? 'admin.html' : 'student.html';
 }
 
 function doLogout() {
   api('logout', Session.token).finally(() => {
     Session.clear();
-    window.top.location.href = window.APP_SCRIPT_URL || '';
+    window.location.href = 'login.html';
   });
 }
 
@@ -101,6 +154,9 @@ function doLogout() {
 // LOGIN PAGE
 // ===========================================================
 function initLogin() {
+  // Already logged in? Skip straight to the right page.
+  if (Session.token) { goHome(); return; }
+
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('login-error');
   const btn = document.getElementById('login-btn');
@@ -118,6 +174,7 @@ function initLogin() {
         if (!res.success) { errorEl.textContent = res.message; return; }
         Session.token = res.token;
         Session.role = res.role;
+        Session.fullName = res.fullName;
         goHome();
       })
       .catch((err) => {
@@ -133,7 +190,7 @@ function initLogin() {
 // ===========================================================
 /**
  * Renders a month calendar into containerEl.
- * options: { onSelectDate(dateStr), selectedDate, minDate, summaryFetcher: async (start,end) => {date: state} }
+ * options: { onSelectDate(dateStr), selectedDate, summaryFetcher: async (start,end) => {date: state} }
  */
 function renderCalendar(containerEl, viewDate, options) {
   const year = viewDate.getFullYear();
@@ -152,7 +209,7 @@ function renderCalendar(containerEl, viewDate, options) {
       <strong>${monthLabel}</strong>
       <button type="button" data-nav="1">&rarr;</button>
     </div>
-    <div class="calendar-grid" id="cal-grid-${containerEl.id}">
+    <div class="calendar-grid">
       ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d) => `<div class="dow">${d}</div>`).join('')}
     </div>
     <div class="cal-legend">
@@ -163,12 +220,10 @@ function renderCalendar(containerEl, viewDate, options) {
   `;
 
   containerEl.querySelector('[data-nav="-1"]').onclick = () => {
-    const d = new Date(year, month - 1, 1);
-    renderCalendar(containerEl, d, options);
+    renderCalendar(containerEl, new Date(year, month - 1, 1), options);
   };
   containerEl.querySelector('[data-nav="1"]').onclick = () => {
-    const d = new Date(year, month + 1, 1);
-    renderCalendar(containerEl, d, options);
+    renderCalendar(containerEl, new Date(year, month + 1, 1), options);
   };
 
   const grid = containerEl.querySelector('.calendar-grid');
@@ -180,7 +235,7 @@ function renderCalendar(containerEl, viewDate, options) {
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = toISO(new Date(year, month, day));
       const isPast = dateStr < todayISO();
-      let state = (summary && summary[dateStr]) || (isPast ? 'past' : 'none');
+      const state = (summary && summary[dateStr]) || (isPast ? 'past' : 'none');
       const selectable = !isPast && state !== 'blocked';
       const isSelected = options.selectedDate === dateStr;
       const cell = document.createElement('div');
@@ -208,18 +263,20 @@ function toISO(d) {
 let studentSelectedDate = null;
 
 function initStudent() {
-  window.APP_SCRIPT_URL = window.APP_SCRIPT_URL || document.body.getAttribute('data-script-url');
-  bindSidebarNav();
-  document.getElementById('logout-btn').addEventListener('click', doLogout);
+  requireAuth('Student').then(() => {
+    bindSidebarNav();
+    document.getElementById('logout-btn').addEventListener('click', doLogout);
 
-  renderCalendar(document.getElementById('student-calendar'), new Date(), {
-    selectedDate: studentSelectedDate,
-    onSelectDate: (dateStr) => { studentSelectedDate = dateStr; loadSlotsForDate(dateStr); },
-    summaryFetcher: (start, end) => api('getCalendarSummary', Session.token, start, end)
+    renderCalendar(document.getElementById('student-calendar'), new Date(), {
+      selectedDate: studentSelectedDate,
+      onSelectDate: (dateStr) => { studentSelectedDate = dateStr; loadSlotsForDate(dateStr); },
+      summaryFetcher: (start, end) => api('getCalendarSummary', Session.token, start, end)
+    });
+
+    document.getElementById('booking-form').addEventListener('submit', submitBooking);
+    document.getElementById('confirm-close-btn').addEventListener('click', closeConfirmModal);
+    loadMyBookings();
   });
-
-  document.getElementById('booking-form').addEventListener('submit', submitBooking);
-  loadMyBookings();
 }
 
 function loadSlotsForDate(dateStr) {
@@ -274,14 +331,32 @@ function submitBooking(e) {
   api('bookSlot', Session.token, payload).then((res) => {
     setButtonLoading(btn, false, 'Confirm Booking');
     closeBookingModal();
-    toast('Interview booked for ' + fmtDateLabel(res.booking.date) + ' at ' + to12h(res.booking.time) + '.', 'success');
+    showConfirmModal(res.booking);
     loadSlotsForDate(payload.date);
     loadMyBookings();
-    switchTab('my-bookings');
   }).catch((err) => {
     setButtonLoading(btn, false, 'Confirm Booking');
     toast(err.message || 'Could not book that slot.', 'error');
   });
+}
+
+/** Booking confirmation modal — shown right after a successful booking. */
+function showConfirmModal(booking) {
+  const list = document.getElementById('confirm-list');
+  list.innerHTML = [
+    ['Booking ID', booking.bookingId],
+    ['Company', booking.companyName],
+    ['Interview Level', booking.interviewLevel],
+    ['Date', fmtDateLabel(booking.date)],
+    ['Time', to12h(booking.time)],
+    ['Mode', booking.mode],
+    ['Status', booking.status]
+  ].map(([label, value]) => `<li><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></li>`).join('');
+  document.getElementById('confirm-modal').classList.add('open');
+}
+function closeConfirmModal() {
+  document.getElementById('confirm-modal').classList.remove('open');
+  switchTab('my-bookings');
 }
 
 function loadMyBookings() {
@@ -357,19 +432,22 @@ function loadRescheduleSlots(dateStr) {
 // ADMIN PAGE
 // ===========================================================
 function initAdmin() {
-  window.APP_SCRIPT_URL = window.APP_SCRIPT_URL || document.body.getAttribute('data-script-url');
-  bindSidebarNav();
-  document.getElementById('logout-btn').addEventListener('click', doLogout);
+  requireAuth('Admin').then(() => {
+    bindSidebarNav();
+    document.getElementById('logout-btn').addEventListener('click', doLogout);
 
-  loadDashboard();
-  loadStudentsTable();
-  loadBookingsTable();
-  loadBlockedDates();
+    loadDashboard();
+    loadStudentsTable();
+    loadBookingsTable();
+    loadBlockedDates();
 
-  document.getElementById('add-student-form').addEventListener('submit', handleAddStudent);
-  document.getElementById('search-bookings-form').addEventListener('submit', handleSearchBookings);
-  document.getElementById('block-date-form').addEventListener('submit', handleBlockDate);
-  document.getElementById('generate-slots-form').addEventListener('submit', handleGenerateSlots);
+    document.getElementById('add-student-form').addEventListener('submit', handleAddStudent);
+    document.getElementById('edit-student-form').addEventListener('submit', handleEditStudentSubmit);
+    document.getElementById('edit-booking-form').addEventListener('submit', handleEditBookingSubmit);
+    document.getElementById('search-bookings-form').addEventListener('submit', handleSearchBookings);
+    document.getElementById('block-date-form').addEventListener('submit', handleBlockDate);
+    document.getElementById('generate-slots-form').addEventListener('submit', handleGenerateSlots);
+  });
 }
 
 function loadDashboard() {
@@ -393,9 +471,12 @@ function loadDashboard() {
   });
 }
 
+let studentsCache = [];
+
 function loadStudentsTable() {
   const wrap = document.getElementById('students-table-wrap');
   api('listStudents', Session.token).then((students) => {
+    studentsCache = students;
     if (!students.length) { wrap.innerHTML = '<p class="empty-state">No students yet.</p>'; return; }
     wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
       <th>Username</th><th>Full Name</th><th>Email</th><th>Status</th><th></th>
@@ -406,6 +487,7 @@ function loadStudentsTable() {
         <td>${escapeHtml(st.Email || '—')}</td>
         <td><span class="pill ${st.Status.toLowerCase()}">${st.Status}</span></td>
         <td class="flex gap-8">
+          <button class="btn btn-outline btn-sm" onclick="openEditStudentModal('${st.Username}')">Edit</button>
           <button class="btn btn-outline btn-sm" onclick="toggleStudentStatus('${st.Username}','${st.Status}')">${st.Status === 'Active' ? 'Deactivate' : 'Activate'}</button>
           <button class="btn btn-danger btn-sm" onclick="deleteStudentRow('${st.Username}')">Delete</button>
         </td>
@@ -435,6 +517,40 @@ function handleAddStudent(e) {
   });
 }
 
+function openEditStudentModal(username) {
+  const st = studentsCache.find((s) => s.Username === username);
+  if (!st) return;
+  document.getElementById('edit-username').value = st.Username;
+  document.getElementById('edit-username-label').textContent = st.Username;
+  document.getElementById('edit-fullname').value = st.FullName;
+  document.getElementById('edit-email').value = st.Email || '';
+  document.getElementById('edit-password').value = '';
+  document.getElementById('edit-student-modal').classList.add('open');
+}
+function closeEditStudentModal() {
+  document.getElementById('edit-student-modal').classList.remove('open');
+}
+function handleEditStudentSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('edit-student-btn');
+  const username = document.getElementById('edit-username').value;
+  const payload = {
+    fullName: document.getElementById('edit-fullname').value.trim(),
+    email: document.getElementById('edit-email').value.trim(),
+    password: document.getElementById('edit-password').value
+  };
+  setButtonLoading(btn, true);
+  api('editStudent', Session.token, username, payload).then(() => {
+    setButtonLoading(btn, false, 'Save Changes');
+    toast('Student updated.', 'success');
+    closeEditStudentModal();
+    loadStudentsTable();
+  }).catch((err) => {
+    setButtonLoading(btn, false, 'Save Changes');
+    toast(err.message || 'Could not update student.', 'error');
+  });
+}
+
 function toggleStudentStatus(username, currentStatus) {
   const next = currentStatus === 'Active' ? 'Inactive' : 'Active';
   api('setStudentStatus', Session.token, username, next).then(() => {
@@ -451,8 +567,11 @@ function deleteStudentRow(username) {
   }).catch((err) => toast(err.message, 'error'));
 }
 
+let bookingsCache = [];
+
 function loadBookingsTable(rows) {
   const render = (rows) => {
+    bookingsCache = rows;
     const wrap = document.getElementById('bookings-table-wrap');
     if (!rows.length) { wrap.innerHTML = '<p class="empty-state">No bookings found.</p>'; return; }
     wrap.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
@@ -466,8 +585,8 @@ function loadBookingsTable(rows) {
         <td>${to12h(b['Time Slot'])}</td>
         <td>${escapeHtml(b['Interview Mode'])}</td>
         <td><span class="pill ${b.Status.toLowerCase()}">${b.Status}</span></td>
-        <td>${b.Status === 'Confirmed' ? `
-          <button class="btn btn-outline btn-sm" onclick="adminEditRow('${b['Booking ID']}','${escapeAttr(b['Company Name'])}','${escapeAttr(b['Interview Level'])}','${escapeAttr(b['Interview Mode'])}','${escapeAttr(b.Notes)}')">Edit</button>
+        <td class="flex gap-8">${b.Status === 'Confirmed' ? `
+          <button class="btn btn-outline btn-sm" onclick="openEditBookingModal('${b['Booking ID']}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="adminCancel('${b['Booking ID']}')">Cancel</button>` : ''}</td>
       </tr>`).join('') + '</tbody></table></div>';
   };
@@ -476,24 +595,42 @@ function loadBookingsTable(rows) {
   api('listAllBookings', Session.token).then(render);
 }
 
-function escapeAttr(str) {
-  return String(str || '').replace(/'/g, "\\'");
+function openEditBookingModal(bookingId) {
+  const b = bookingsCache.find((x) => x['Booking ID'] === bookingId);
+  if (!b) return;
+  document.getElementById('edit-booking-id').value = bookingId;
+  document.getElementById('edit-booking-label').textContent = fmtDateLabel(b['Interview Date']) + ' · ' + to12h(b['Time Slot']);
+  document.getElementById('edit-bk-student').value = b['Student Name'];
+  document.getElementById('edit-bk-company').value = b['Company Name'];
+  document.getElementById('edit-bk-level').value = b['Interview Level'];
+  document.getElementById('edit-bk-mode').value = b['Interview Mode'];
+  document.getElementById('edit-bk-notes').value = b.Notes || '';
+  document.getElementById('edit-booking-modal').classList.add('open');
 }
-
-function adminEditRow(bookingId, currentCompany, currentLevel, currentMode, currentNotes) {
-  const companyName = prompt('Company name:', currentCompany);
-  if (companyName === null) return;
-  const interviewLevel = prompt('Interview level:', currentLevel);
-  if (interviewLevel === null) return;
-  const mode = prompt('Interview mode (Online/Offline):', currentMode);
-  if (mode === null) return;
-  const notes = prompt('Notes (optional):', currentNotes);
-  if (notes === null) return;
-
-  api('adminEditBooking', Session.token, bookingId, { companyName, interviewLevel, mode, notes }).then(() => {
+function closeEditBookingModal() {
+  document.getElementById('edit-booking-modal').classList.remove('open');
+}
+function handleEditBookingSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('edit-booking-btn');
+  const bookingId = document.getElementById('edit-booking-id').value;
+  const payload = {
+    studentName: document.getElementById('edit-bk-student').value.trim(),
+    companyName: document.getElementById('edit-bk-company').value.trim(),
+    interviewLevel: document.getElementById('edit-bk-level').value.trim(),
+    mode: document.getElementById('edit-bk-mode').value,
+    notes: document.getElementById('edit-bk-notes').value.trim()
+  };
+  setButtonLoading(btn, true);
+  api('adminEditBooking', Session.token, bookingId, payload).then(() => {
+    setButtonLoading(btn, false, 'Save Changes');
     toast('Booking updated.', 'success');
+    closeEditBookingModal();
     loadBookingsTable();
-  }).catch((err) => toast(err.message || 'Could not update booking.', 'error'));
+  }).catch((err) => {
+    setButtonLoading(btn, false, 'Save Changes');
+    toast(err.message || 'Could not update booking.', 'error');
+  });
 }
 
 function handleSearchBookings(e) {
@@ -564,7 +701,7 @@ function handleGenerateSlots(e) {
 }
 
 // ===========================================================
-// SHARED: sidebar tab switching + tiny helpers
+// SHARED: sidebar tab switching
 // ===========================================================
 function bindSidebarNav() {
   document.querySelectorAll('.nav-item[data-tab]').forEach((btn) => {
@@ -576,8 +713,4 @@ function switchTab(tabId) {
   document.querySelectorAll('.nav-item[data-tab]').forEach((el) => el.classList.remove('active'));
   document.getElementById('tab-' + tabId).classList.add('active');
   document.querySelector('.nav-item[data-tab="' + tabId + '"]').classList.add('active');
-}
-function escapeHtml(str) {
-  if (str === null || str === undefined) return '';
-  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

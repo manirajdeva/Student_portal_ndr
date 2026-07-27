@@ -3,10 +3,12 @@
  * ------------------------------------------------------------------
  * Username/password authentication and session handling.
  * Sessions are stored server-side in CacheService, keyed by a random
- * token. The client stores the token (localStorage) and passes it as
- * a parameter on every google.script.run call and on page reloads
- * (?token=...). This avoids needing real cookies inside the
- * Apps Script HTML sandbox.
+ * token. The client keeps the token in memory (see script.js) and
+ * passes it as a parameter on every google.script.run call; full page
+ * reloads carry it via the URL (?token=...), which doGet() reflects
+ * back into the page. This avoids needing real cookies (or
+ * localStorage, which Safari blocks in Apps Script's sandboxed iframe)
+ * inside the Apps Script HTML sandbox.
  *
  * NOTE ON SECURITY: this is a lightweight scheme suitable for an
  * internal tool. Passwords are SHA-256 hashed with a per-deployment
@@ -95,4 +97,14 @@ function requireRole(token, role) {
   if (!session) throw new Error('Your session has expired. Please log in again.');
   if (role && session.role !== role) throw new Error('You do not have permission to perform this action.');
   return session;
+}
+
+/**
+ * Called by the client on every admin/student page load to confirm the
+ * stored token is still valid and fetch the current {username, role,
+ * fullName} — the static frontend has no server-rendered session data,
+ * so it must ask for this explicitly instead.
+ */
+function whoAmI(token) {
+  return requireRole(token, null);
 }
