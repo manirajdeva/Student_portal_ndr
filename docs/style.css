@@ -101,6 +101,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--gold); }
   color: var(--gold);
   margin-bottom: 6px;
 }
+
+/* ---------- Brand logo (white PNG on a dark theme, so give it a card) ---------- */
+.brand-logo {
+  background: #fff;
+  border-radius: 10px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+}
+.brand-logo img { display: block; height: 28px; width: auto; }
+.login-card .brand-logo { padding: 6px 10px; margin-bottom: 14px; }
+.login-card .brand-logo img { height: 40px; }
+.sidebar .brand-logo { margin: 0 10px 10px; align-self: flex-start; }
 .login-card h2 { font-size: 22px; margin-bottom: 4px; }
 .login-card p.sub { color: var(--muted); font-size: 13px; margin: 4px 0 20px; }
 .field { margin-bottom: 14px; }
