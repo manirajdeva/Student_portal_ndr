@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <?!= include('style'); ?>
+</head>
+<body data-page="student" data-script-url="<?= scriptUrl ?>">
+  <div id="toast-container"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <p class="brand">BOOKING PORTAL</p>
+      <p class="userline">Signed in as<br><strong><?= session.fullName ?></strong></p>
+
+      <button class="nav-item active" data-tab="book">🗓️ Book Interview</button>
+      <button class="nav-item" data-tab="my-bookings">📋 My Bookings</button>
+
+      <div class="nav-spacer"></div>
+      <button class="nav-item" id="logout-btn">⏻ Logout</button>
+    </aside>
+
+    <main class="main-area">
+      <section class="tab-section active" id="tab-book">
+        <h1 class="page-title">Book an Interview Slot</h1>
+        <p class="page-sub">Pick a date, choose an open time, and confirm your details.</p>
+        <?!= include('booking'); ?>
+      </section>
+
+      <section class="tab-section" id="tab-my-bookings">
+        <h1 class="page-title">My Bookings</h1>
+        <p class="page-sub">Your upcoming and past interview bookings.</p>
+        <div id="my-bookings-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="page-loader" class="hidden"><span class="spinner"></span><p>Loading...</p></div>
+
+  <script>window.APP_SCRIPT_URL = "<?= scriptUrl ?>";</script>
+  <?!= include('script'); ?>
+</body>
+</html>

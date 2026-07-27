@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <?!= include('style'); ?>
+</head>
+<body data-page="admin" data-script-url="<?= scriptUrl ?>">
+  <div id="toast-container"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <p class="brand">CONTROL ROOM</p>
+      <p class="userline">Signed in as<br><strong><?= session.fullName ?></strong></p>
+
+      <button class="nav-item active" data-tab="dashboard">📊 Dashboard</button>
+      <button class="nav-item" data-tab="students">🎓 Students</button>
+      <button class="nav-item" data-tab="bookings">📅 Bookings</button>
+      <button class="nav-item" data-tab="holidays">🚫 Holidays</button>
+      <button class="nav-item" data-tab="slots">➕ Generate Slots</button>
+
+      <div class="nav-spacer"></div>
+      <button class="nav-item" id="logout-btn">⏻ Logout</button>
+    </aside>
+
+    <main class="main-area">
+      <!-- DASHBOARD -->
+      <section class="tab-section active" id="tab-dashboard">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-sub">Overview of students, today's activity and open availability.</p>
+        <?!= include('dashboard'); ?>
+      </section>
+
+      <!-- STUDENTS -->
+      <section class="tab-section" id="tab-students">
+        <h1 class="page-title">Students</h1>
+        <p class="page-sub">Add, edit, deactivate or remove student accounts.</p>
+
+        <div class="panel">
+          <p class="panel-title">Add a student</p>
+          <form id="add-student-form" class="form-row">
+            <div class="field"><label>Full name</label><input id="new-fullname" required></div>
+            <div class="field"><label>Username</label><input id="new-username" required></div>
+            <div class="field"><label>Password</label><input id="new-password" type="password" required></div>
+            <div class="field"><label>Email (optional)</label><input id="new-email" type="email"></div>
+            <button type="submit" class="btn btn-primary" id="add-student-btn">Add Student</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <p class="panel-title">All students</p>
+          <div id="students-table-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
+        </div>
+      </section>
+
+      <!-- BOOKINGS -->
+      <section class="tab-section" id="tab-bookings">
+        <h1 class="page-title">Bookings</h1>
+        <p class="page-sub">Search, review and cancel interview bookings.</p>
+
+        <div class="panel">
+          <p class="panel-title">Search</p>
+          <form id="search-bookings-form" class="form-row">
+            <div class="field"><label>Student name</label><input id="f-name" placeholder="Any"></div>
+            <div class="field"><label>Company</label><input id="f-company" placeholder="Any"></div>
+            <div class="field"><label>Interview level</label><input id="f-level" placeholder="Any"></div>
+            <div class="field"><label>Date</label><input id="f-date" type="date"></div>
+            <button type="submit" class="btn btn-primary">Search</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <p class="panel-title">Results</p>
+          <div id="bookings-table-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
+        </div>
+      </section>
+
+      <!-- HOLIDAYS -->
+      <section class="tab-section" id="tab-holidays">
+        <h1 class="page-title">Holidays &amp; Unavailable Dates</h1>
+        <p class="page-sub">Block a date so students can't book against it. Already-booked slots are left untouched.</p>
+
+        <div class="panel">
+          <form id="block-date-form" class="form-row">
+            <div class="field"><label>Date to block</label><input id="block-date-input" type="date" required></div>
+            <button type="submit" class="btn btn-danger">Block Date</button>
+          </form>
+        </div>
+
+        <div class="panel">
+          <p class="panel-title">Upcoming blocked dates</p>
+          <div id="blocked-dates-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
+        </div>
+      </section>
+
+      <!-- GENERATE SLOTS -->
+      <section class="tab-section" id="tab-slots">
+        <h1 class="page-title">Generate Slots</h1>
+        <p class="page-sub">Creates 7:00 AM – 10:00 PM slots at 30-minute intervals for each day in the range. Existing slots are never duplicated.</p>
+
+        <div class="panel">
+          <form id="generate-slots-form" class="form-row">
+            <div class="field"><label>Start date</label><input id="gen-start" type="date" required></div>
+            <div class="field"><label>End date</label><input id="gen-end" type="date" required></div>
+            <button type="submit" class="btn btn-primary" id="generate-slots-btn">Generate Slots</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="page-loader" class="hidden"><span class="spinner"></span><p>Loading...</p></div>
+
+  <script>window.APP_SCRIPT_URL = "<?= scriptUrl ?>";</script>
+  <?!= include('script'); ?>
+</body>
+</html>

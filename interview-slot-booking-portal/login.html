@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <?!= include('style'); ?>
+</head>
+<body data-page="login" data-script-url="<?= scriptUrl ?>">
+  <div id="toast-container"></div>
+
+  <div class="login-wrap">
+    <div class="login-card">
+      <p class="badge">INTERVIEW SLOT BOOKING PORTAL</p>
+      <h2>Sign in</h2>
+      <p class="sub">Use your username and password to continue.</p>
+
+      <form id="login-form">
+        <div class="field">
+          <label>Username</label>
+          <input id="login-username" type="text" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" required>
+        </div>
+        <div class="error-msg" id="login-error"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <script>window.APP_SCRIPT_URL = "<?= scriptUrl ?>";</script>
+  <?!= include('script'); ?>
+</body>
+</html>
