@@ -13,7 +13,6 @@ const CONFIG = {
   SHEET_USERS: 'Users',
   SHEET_SLOTS: 'Slots',
   SHEET_BOOKINGS: 'Bookings',
-  SHEET_SESSIONS: 'Sessions',
 
   SLOT_START_HOUR: 7,   // 7:00 AM
   SLOT_END_HOUR: 22,    // 10:00 PM
@@ -31,12 +30,7 @@ const SCHEMA = {
   Bookings: [
     'Booking ID', 'Username', 'Student Name', 'Company Name', 'Interview Level',
     'Interview Date', 'Time Slot', 'Interview Mode', 'Notes', 'Status', 'Booked On'
-  ],
-  // No expiry column on purpose — sessions live until an explicit logout()
-  // removes the row. CacheService (the previous session store) caps out at
-  // 6 hours with no way to extend it, which conflicted with "stay logged
-  // in until I log out" on the Android app / browser.
-  Sessions: ['Token', 'Username', 'Role', 'FullName', 'CreatedOn']
+  ]
 };
 
 /**
@@ -193,7 +187,6 @@ function initSheets() {
   getSheet(CONFIG.SHEET_USERS);
   getSheet(CONFIG.SHEET_SLOTS);
   getSheet(CONFIG.SHEET_BOOKINGS);
-  getSheet(CONFIG.SHEET_SESSIONS);
 }
 
 /**

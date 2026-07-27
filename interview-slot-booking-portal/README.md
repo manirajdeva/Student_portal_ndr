@@ -88,7 +88,8 @@ To update the frontend afterward: edit files in `docs/`, commit, push — GitHub
 
 ## How sessions work
 
-- `login()` validates the password and returns a random token, stored server-side in `CacheService` (6 hour expiry) mapped to `{username, role, fullName}`.
+- `login()` validates the password and returns a random token, stored server-side in `CacheService` mapped to `{username, role, fullName}`.
+- Sessions use a **120-second sliding idle timeout** (`IDLE_TIMEOUT_SEC` in `Auth.gs`): every validated request refreshes the token's expiry, so continued activity never gets cut off mid-use — but 120 seconds with zero requests lets the token expire on its own.
 - The client stores that token in `localStorage` (see `Session` in `docs/script.js`) — safe here since the frontend is a normal top-level site, not inside Apps Script's sandboxed iframe.
 - Every admin/student page calls `whoAmI(token)` on load to confirm the session is still valid and fetch the current user's display name; an invalid/expired token redirects to `login.html`.
 - `logout()` removes the cache entry and clears local storage.

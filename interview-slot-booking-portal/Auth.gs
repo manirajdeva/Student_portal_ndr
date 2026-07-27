@@ -2,13 +2,13 @@
  * Auth.gs
  * ------------------------------------------------------------------
  * Username/password authentication and session handling.
- * Sessions are rows in the Sessions sheet, keyed by a random token —
- * NOT CacheService, which caps out at 6 hours with no way to extend
- * it. Storing sessions in the Sheet means a login stays valid
- * indefinitely until an explicit logout() deletes the row, which is
- * what "stay logged in until I log out" (the Android app, browsers)
- * requires. The client keeps the token in localStorage (see
- * script.js) and passes it as a parameter on every API call.
+ * Sessions are stored server-side in CacheService, keyed by a random
+ * token. IDLE_TIMEOUT_SEC is a *sliding* window: every validated
+ * request refreshes the token's expiry, so an active user is never
+ * cut off mid-use, but 120 seconds with no requests at all lets the
+ * cache entry expire on its own and the token stops working. The
+ * client keeps the token in localStorage (see script.js) and passes
+ * it as a parameter on every API call.
  *
  * NOTE ON SECURITY: this is a lightweight scheme suitable for an
  * internal tool. Passwords are SHA-256 hashed with a per-deployment
@@ -34,6 +34,10 @@ function hashPassword(password) {
   return bytes.map((b) => ((b < 0 ? b + 256 : b).toString(16)).padStart(2, '0')).join('');
 }
 
+// Session is invalidated after this many seconds with no requests at all.
+// Every successful validateSession() call slides this window forward.
+const IDLE_TIMEOUT_SEC = 120;
+
 /**
  * Validates username/password and creates a session.
  * Called from login.html via google.script.run.
@@ -57,8 +61,8 @@ function login(username, password) {
   }
 
   const token = Utilities.getUuid();
-  const sessionSheet = getSheet(CONFIG.SHEET_SESSIONS);
-  sessionSheet.appendRow([token, user.Username, user.Role, user.FullName, nowString()]);
+  const sessionData = { username: user.Username, role: user.Role, fullName: user.FullName };
+  CacheService.getScriptCache().put(token, JSON.stringify(sessionData), IDLE_TIMEOUT_SEC);
 
   return {
     success: true,
@@ -69,22 +73,27 @@ function login(username, password) {
   };
 }
 
-/** Returns session object {username, role, fullName} or null if invalid/nonexistent. */
+/**
+ * Returns session object {username, role, fullName} or null if invalid/idle
+ * -expired. Refreshes the token's expiry on every successful call (sliding
+ * window), so continued activity never gets cut off mid-use.
+ */
 function validateSession(token) {
   if (!token) return null;
-  const sheet = getSheet(CONFIG.SHEET_SESSIONS);
-  const session = sheetToObjects(sheet).find((s) => s.Token === token);
-  if (!session) return null;
-  return { username: session.Username, role: session.Role, fullName: session.FullName };
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(token);
+  if (!cached) return null;
+  cache.put(token, cached, IDLE_TIMEOUT_SEC); // slide the idle window forward
+  try {
+    return JSON.parse(cached);
+  } catch (e) {
+    return null;
+  }
 }
 
-/** Invalidates a session token (logout) by deleting its row. */
+/** Invalidates a session token (logout). */
 function logout(token) {
-  if (token) {
-    const sheet = getSheet(CONFIG.SHEET_SESSIONS);
-    const row = findRowIndexByColumnValue(sheet, 'Token', token);
-    if (row !== -1) sheet.deleteRow(row);
-  }
+  if (token) CacheService.getScriptCache().remove(token);
   return { success: true };
 }
 
