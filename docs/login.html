@@ -18,8 +18,14 @@
     <div class="login-card">
       <div class="brand-logo"><img src="ndr_logo.png" alt="NDR EdTech"></div>
       <p class="badge">INTERVIEW SLOT BOOKING PORTAL</p>
-      <h2>Sign in</h2>
-      <p class="sub">Use your username and password to continue.</p>
+
+      <div class="role-toggle" id="role-toggle">
+        <button type="button" class="role-toggle-btn active" data-role="Student">Student</button>
+        <button type="button" class="role-toggle-btn" data-role="Admin">Admin</button>
+      </div>
+
+      <h2 id="login-heading">Student Sign In</h2>
+      <p class="sub" id="login-subtext">Sign in to view and book your interview slots.</p>
 
       <form id="login-form">
         <div class="field">

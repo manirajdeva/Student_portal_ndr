@@ -182,6 +182,23 @@ function initLogin() {
   const errorEl = document.getElementById('login-error');
   const btn = document.getElementById('login-btn');
 
+  // Role toggle is a visual cue only — the account's real role (from the
+  // Users sheet) always decides where login actually lands; picking
+  // "Admin" here with a student account still logs in as a student.
+  const roleCopy = {
+    Student: { heading: 'Student Sign In', sub: 'Sign in to view and book your interview slots.' },
+    Admin: { heading: 'Admin Sign In', sub: 'Sign in to manage students, bookings and slots.' }
+  };
+  document.querySelectorAll('.role-toggle-btn').forEach((tabBtn) => {
+    tabBtn.addEventListener('click', () => {
+      document.querySelectorAll('.role-toggle-btn').forEach((b) => b.classList.remove('active'));
+      tabBtn.classList.add('active');
+      const copy = roleCopy[tabBtn.getAttribute('data-role')];
+      document.getElementById('login-heading').textContent = copy.heading;
+      document.getElementById('login-subtext').textContent = copy.sub;
+    });
+  });
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     errorEl.textContent = '';
