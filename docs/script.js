@@ -74,8 +74,18 @@ function requireAuth(expectedRole) {
       return session;
     })
     .catch((err) => {
-      Session.clear();
-      window.location.href = 'login.html';
+      // Only treat this as "you're logged out" when the server explicitly
+      // said the session is invalid/expired. A transient network blip, the
+      // phone waking a backgrounded tab, or a slow Apps Script cold start
+      // can all make this request fail too — those shouldn't wipe a
+      // perfectly valid token and boot the user back to the login page.
+      const isAuthError = /session has expired|log in again|not logged in/i.test(err.message || '');
+      if (isAuthError) {
+        Session.clear();
+        window.location.href = 'login.html';
+      } else {
+        toast(err.message || 'Could not reach the server. Please check your connection and try again.', 'error');
+      }
       throw err;
     });
 }
