@@ -13,12 +13,12 @@ const CONFIG = {
   SHEET_USERS: 'Users',
   SHEET_SLOTS: 'Slots',
   SHEET_BOOKINGS: 'Bookings',
+  SHEET_SESSIONS: 'Sessions',
 
   SLOT_START_HOUR: 7,   // 7:00 AM
   SLOT_END_HOUR: 22,    // 10:00 PM
   SLOT_INTERVAL_MIN: 30,
 
-  SESSION_DURATION_SEC: 6 * 60 * 60, // 6 hours — CacheService max is 6h
   ONE_ACTIVE_BOOKING_PER_STUDENT: false, // toggle the "one active booking" rule
 
   APP_TITLE: 'Interview Slot Booking Portal'
@@ -31,7 +31,12 @@ const SCHEMA = {
   Bookings: [
     'Booking ID', 'Username', 'Student Name', 'Company Name', 'Interview Level',
     'Interview Date', 'Time Slot', 'Interview Mode', 'Notes', 'Status', 'Booked On'
-  ]
+  ],
+  // No expiry column on purpose — sessions live until an explicit logout()
+  // removes the row. CacheService (the previous session store) caps out at
+  // 6 hours with no way to extend it, which conflicted with "stay logged
+  // in until I log out" on the Android app / browser.
+  Sessions: ['Token', 'Username', 'Role', 'FullName', 'CreatedOn']
 };
 
 /**
@@ -183,11 +188,12 @@ function getSheet(sheetName) {
   return sheet;
 }
 
-/** Ensures all three sheets exist with correct headers. Safe to call repeatedly. */
+/** Ensures all sheets exist with correct headers. Safe to call repeatedly. */
 function initSheets() {
   getSheet(CONFIG.SHEET_USERS);
   getSheet(CONFIG.SHEET_SLOTS);
   getSheet(CONFIG.SHEET_BOOKINGS);
+  getSheet(CONFIG.SHEET_SESSIONS);
 }
 
 /**

@@ -35,3 +35,8 @@ service-account.json
 # clasp (Apps Script CLI) — project-specific, not shared across machines
 .clasp.json
 .clasprc.json
+
+# Android TWA project — contains a signing keystore + password that must
+# never be committed (a public repo leak would let anyone impersonate the
+# app's identity). Back these up outside git instead.
+android-twa/

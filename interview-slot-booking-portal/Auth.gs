@@ -2,13 +2,13 @@
  * Auth.gs
  * ------------------------------------------------------------------
  * Username/password authentication and session handling.
- * Sessions are stored server-side in CacheService, keyed by a random
- * token. The client keeps the token in memory (see script.js) and
- * passes it as a parameter on every google.script.run call; full page
- * reloads carry it via the URL (?token=...), which doGet() reflects
- * back into the page. This avoids needing real cookies (or
- * localStorage, which Safari blocks in Apps Script's sandboxed iframe)
- * inside the Apps Script HTML sandbox.
+ * Sessions are rows in the Sessions sheet, keyed by a random token —
+ * NOT CacheService, which caps out at 6 hours with no way to extend
+ * it. Storing sessions in the Sheet means a login stays valid
+ * indefinitely until an explicit logout() deletes the row, which is
+ * what "stay logged in until I log out" (the Android app, browsers)
+ * requires. The client keeps the token in localStorage (see
+ * script.js) and passes it as a parameter on every API call.
  *
  * NOTE ON SECURITY: this is a lightweight scheme suitable for an
  * internal tool. Passwords are SHA-256 hashed with a per-deployment
@@ -57,8 +57,8 @@ function login(username, password) {
   }
 
   const token = Utilities.getUuid();
-  const sessionData = { username: user.Username, role: user.Role, fullName: user.FullName };
-  CacheService.getScriptCache().put(token, JSON.stringify(sessionData), CONFIG.SESSION_DURATION_SEC);
+  const sessionSheet = getSheet(CONFIG.SHEET_SESSIONS);
+  sessionSheet.appendRow([token, user.Username, user.Role, user.FullName, nowString()]);
 
   return {
     success: true,
@@ -69,21 +69,22 @@ function login(username, password) {
   };
 }
 
-/** Returns session object {username, role, fullName} or null if invalid/expired. */
+/** Returns session object {username, role, fullName} or null if invalid/nonexistent. */
 function validateSession(token) {
   if (!token) return null;
-  const cached = CacheService.getScriptCache().get(token);
-  if (!cached) return null;
-  try {
-    return JSON.parse(cached);
-  } catch (e) {
-    return null;
-  }
+  const sheet = getSheet(CONFIG.SHEET_SESSIONS);
+  const session = sheetToObjects(sheet).find((s) => s.Token === token);
+  if (!session) return null;
+  return { username: session.Username, role: session.Role, fullName: session.FullName };
 }
 
-/** Invalidates a session token (logout). */
+/** Invalidates a session token (logout) by deleting its row. */
 function logout(token) {
-  if (token) CacheService.getScriptCache().remove(token);
+  if (token) {
+    const sheet = getSheet(CONFIG.SHEET_SESSIONS);
+    const row = findRowIndexByColumnValue(sheet, 'Token', token);
+    if (row !== -1) sheet.deleteRow(row);
+  }
   return { success: true };
 }
 
