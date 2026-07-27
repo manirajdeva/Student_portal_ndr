@@ -11,8 +11,9 @@
 /**
  * Ensures slot rows exist for a given date (7:00 AM - 10:00 PM, 30-min
  * steps). Safe to call repeatedly — never duplicates existing rows.
- * Used both by the admin's explicit "Generate Slots" action and
- * lazily whenever a student requests a date that has no rows yet.
+ * Only called from the admin's explicit "Generate Slots" action
+ * (bulkGenerateSlots) — student-facing reads/bookings never call this,
+ * so a date the admin hasn't generated slots for simply has none.
  */
 function ensureSlotsForDate(dateStr) {
   const sheet = getSheet(CONFIG.SHEET_SLOTS);
@@ -52,17 +53,16 @@ function bulkGenerateSlots(token, startDate, endDate) {
 }
 
 /**
- * Returns the list of slots for a date, auto-generating the standard
- * schedule if none exist yet (unless the date is in the past).
+ * Returns the list of slots for a date. Slots only exist for a date once
+ * the admin has explicitly generated them (Generate Slots tab / bulk
+ * range) — this deliberately does NOT auto-create them just because a
+ * student picked the date, so a date with no admin-generated slots
+ * simply comes back empty ("No slots for this date.").
  * Each item: { time, status } where status is Available/Booked/Blocked/Past.
  */
 function getAvailableSlots(token, dateStr) {
   requireRole(token, null); // any logged-in user (student or admin)
   if (!dateStr) throw new Error('A date is required.');
-
-  if (!isPastDate(dateStr)) {
-    ensureSlotsForDate(dateStr);
-  }
 
   const sheet = getSheet(CONFIG.SHEET_SLOTS);
   const slots = sheetToObjects(sheet)
@@ -131,7 +131,6 @@ function bookSlot(token, booking) {
   lock.waitLock(15000); // wait up to 15s for exclusive access
   try {
     const slotSheet = getSheet(CONFIG.SHEET_SLOTS);
-    ensureSlotsForDate(booking.date);
     const slotRow = findSlotRow(slotSheet, booking.date, booking.time);
     if (slotRow === -1) throw new Error('That slot no longer exists.');
 
@@ -251,7 +250,6 @@ function rescheduleMyBooking(token, bookingId, newDate, newTime) {
   lock.waitLock(15000);
   try {
     const slotSheet = getSheet(CONFIG.SHEET_SLOTS);
-    ensureSlotsForDate(newDate);
     const newSlotRow = findSlotRow(slotSheet, newDate, newTime);
     if (newSlotRow === -1) throw new Error('That slot no longer exists.');
     const newSlotValues = slotSheet.getRange(newSlotRow, 1, 1, SCHEMA.Slots.length).getValues()[0];

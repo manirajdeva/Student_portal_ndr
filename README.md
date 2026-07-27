@@ -56,7 +56,7 @@ New admins can be added either through the **Add an admin** panel on the Student
 
 ### Business rules
 
-- Slots run 7:00 AM–10:00 PM in 30-minute steps (`SLOT_START_HOUR`/`SLOT_END_HOUR`/`SLOT_INTERVAL_MIN` in `Code.gs`), generated lazily per-date or in bulk via the admin's Generate Slots tab.
+- Slots run 7:00 AM–10:00 PM in 30-minute steps (`SLOT_START_HOUR`/`SLOT_END_HOUR`/`SLOT_INTERVAL_MIN` in `Code.gs`). They only exist for a date once the admin explicitly generates them via the Generate Slots tab — a student picking a date the admin hasn't generated slots for just sees "No slots for this date," nothing is auto-created.
 - `CONFIG.ONE_ACTIVE_BOOKING_PER_STUDENT` is `false` — students may hold multiple simultaneous upcoming bookings.
 - Booking a slot is wrapped in `LockService.getScriptLock()` to prevent two students winning the same slot in a race.
 - Past dates/times are always rejected server-side regardless of client input.
