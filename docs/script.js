@@ -726,7 +726,8 @@ function handleSearchBookings(e) {
     studentName: document.getElementById('f-name').value,
     companyName: document.getElementById('f-company').value,
     interviewLevel: document.getElementById('f-level').value,
-    date: document.getElementById('f-date').value
+    date: document.getElementById('f-date').value,
+    status: document.getElementById('f-status').value
   };
   api('searchBookings', Session.token, filters).then((rows) => loadBookingsTable(rows));
 }

@@ -165,8 +165,9 @@ function listAllBookings(token) {
 
 /**
  * Search/filter bookings by any combination of student name, company,
- * interview level, and/or exact date. All filters are optional and
- * case-insensitive substring matches (except date, which is exact).
+ * interview level, status, and/or exact date. All filters are optional
+ * and case-insensitive substring matches (except date and status, which
+ * are exact).
  */
 function searchBookings(token, filters) {
   requireRole(token, 'Admin');
@@ -175,6 +176,7 @@ function searchBookings(token, filters) {
   const company = (filters.companyName || '').toLowerCase().trim();
   const level = (filters.interviewLevel || '').toLowerCase().trim();
   const date = (filters.date || '').trim();
+  const status = (filters.status || '').trim();
 
   return sheetToObjects(getSheet(CONFIG.SHEET_BOOKINGS))
     .filter((b) => {
@@ -182,6 +184,7 @@ function searchBookings(token, filters) {
       if (company && !String(b['Company Name']).toLowerCase().includes(company)) return false;
       if (level && !String(b['Interview Level']).toLowerCase().includes(level)) return false;
       if (date && b['Interview Date'] !== date) return false;
+      if (status && b.Status !== status) return false;
       return true;
     })
     .sort((a, b) => (a['Interview Date'] + a['Time Slot']).localeCompare(b['Interview Date'] + b['Time Slot']))
