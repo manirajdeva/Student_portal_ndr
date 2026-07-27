@@ -215,6 +215,14 @@ table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
 .pill.inactive, .pill.cancelled { background: var(--red-bg); color: #e0a093; }
 .table-scroll { overflow-x: auto; }
 
+/* ---------- Booking layout (student calendar + slot panel) ---------- */
+.booking-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
 /* ---------- Calendar ---------- */
 .calendar {
   background: var(--panel);
@@ -320,10 +328,30 @@ table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
 /* ---------- Mobile ---------- */
 @media (max-width: 760px) {
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; align-items: center; }
+  .sidebar { width: 100%; flex-direction: row; overflow-x: auto; padding: 10px; align-items: center; -webkit-overflow-scrolling: touch; }
   .sidebar .brand, .sidebar .userline { display: none; }
   .nav-spacer { display: none; }
   .nav-item { white-space: nowrap; width: auto; }
   .main-area { padding: 18px 16px; }
   .slot-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+
+  /* Calendar + slot panel stack instead of squeezing side-by-side. */
+  .booking-layout { grid-template-columns: 1fr; }
+
+  /* iOS Safari auto-zooms the page when focusing an input smaller than
+     16px — bump it up on mobile only, so typing a username/password or
+     filling the booking form doesn't trigger an unwanted zoom-in. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Tighter modal padding leaves more room for content on small screens. */
+  .modal-box { padding: 18px; }
+  .login-card { padding: 24px; }
+
+  /* Stat cards and form fields go full-width instead of a cramped grid. */
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+  .form-row .field { min-width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .stat-grid { grid-template-columns: 1fr; }
 }
