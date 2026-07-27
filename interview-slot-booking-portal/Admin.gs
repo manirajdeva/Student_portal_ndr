@@ -67,6 +67,31 @@ function addStudent(token, student) {
 }
 
 /**
+ * Creates a new Admin account. Only reachable by an already-authenticated
+ * admin (requireRole below), unlike the unauthenticated bootstrap function
+ * setupInitialAdmin (Code.gs), which is deliberately kept off the public
+ * API and only runnable from the Apps Script editor.
+ */
+function addAdmin(token, admin) {
+  requireRole(token, 'Admin');
+  const username = (admin.username || '').trim();
+  const password = admin.password || '';
+  const fullName = (admin.fullName || '').trim();
+
+  if (!username || !password || !fullName) {
+    throw new Error('Username, password and full name are required.');
+  }
+
+  const sheet = getSheet(CONFIG.SHEET_USERS);
+  if (findRowIndexByColumnValue(sheet, 'Username', username) !== -1) {
+    throw new Error('That username is already taken.');
+  }
+
+  sheet.appendRow([username, hashPassword(password), 'Admin', fullName, admin.email || '', 'Active', nowString()]);
+  return { success: true, message: 'Admin added.' };
+}
+
+/**
  * Edits a student's full name / email, and optionally resets their
  * password (only when a non-empty new password is supplied).
  * Username and role are immutable via this endpoint.

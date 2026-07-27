@@ -463,6 +463,7 @@ function initAdmin() {
     loadBlockedDates();
 
     document.getElementById('add-student-form').addEventListener('submit', handleAddStudent);
+    document.getElementById('add-admin-form').addEventListener('submit', handleAddAdmin);
     document.getElementById('edit-student-form').addEventListener('submit', handleEditStudentSubmit);
     document.getElementById('edit-booking-form').addEventListener('submit', handleEditBookingSubmit);
     document.getElementById('search-bookings-form').addEventListener('submit', handleSearchBookings);
@@ -535,6 +536,26 @@ function handleAddStudent(e) {
   }).catch((err) => {
     setButtonLoading(btn, false, 'Add Student');
     toast(err.message || 'Could not add student.', 'error');
+  });
+}
+
+function handleAddAdmin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('add-admin-btn');
+  const payload = {
+    username: document.getElementById('new-admin-username').value.trim(),
+    password: document.getElementById('new-admin-password').value,
+    fullName: document.getElementById('new-admin-fullname').value.trim(),
+    email: document.getElementById('new-admin-email').value.trim()
+  };
+  setButtonLoading(btn, true);
+  api('addAdmin', Session.token, payload).then(() => {
+    setButtonLoading(btn, false, 'Add Admin');
+    toast('Admin added.', 'success');
+    e.target.reset();
+  }).catch((err) => {
+    setButtonLoading(btn, false, 'Add Admin');
+    toast(err.message || 'Could not add admin.', 'error');
   });
 }
 

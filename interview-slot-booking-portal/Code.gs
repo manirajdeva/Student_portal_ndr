@@ -96,6 +96,7 @@ const API_FUNCTIONS = {
   getDashboardStats: getDashboardStats,
   listStudents: listStudents,
   addStudent: addStudent,
+  addAdmin: addAdmin,
   editStudent: editStudent,
   deleteStudent: deleteStudent,
   setStudentStatus: setStudentStatus,

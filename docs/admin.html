@@ -81,6 +81,18 @@
           <p class="panel-title">All students</p>
           <div id="students-table-wrap"><p class="empty-state"><span class="spinner"></span> Loading...</p></div>
         </div>
+
+        <div class="panel">
+          <p class="panel-title">Add an admin</p>
+          <p class="text-sm muted" style="margin-top:-8px;margin-bottom:14px;">Admin accounts have full access to this dashboard, including managing other admins.</p>
+          <form id="add-admin-form" class="form-row">
+            <div class="field"><label>Full name</label><input id="new-admin-fullname" required></div>
+            <div class="field"><label>Username</label><input id="new-admin-username" required></div>
+            <div class="field"><label>Password</label><input id="new-admin-password" type="password" required></div>
+            <div class="field"><label>Email (optional)</label><input id="new-admin-email" type="email"></div>
+            <button type="submit" class="btn btn-outline" id="add-admin-btn">Add Admin</button>
+          </form>
+        </div>
       </section>
 
       <!-- BOOKINGS -->
