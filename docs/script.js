@@ -14,20 +14,24 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbwGEEoKKOVS72lWZ1J1V0MbgpU-3suDkET4cKUY7TvcniEhvwO5kp_NFhfp4LGOu5of/exec';
 
 // ---------------------------------------------------------
-// Session helpers. localStorage is safe here — this page is a
-// normal top-level site, not inside Apps Script's sandboxed iframe.
+// Session helpers. sessionStorage on purpose (not localStorage) — it's
+// scoped per browser tab, not shared across every open tab of this
+// site. That means a brand new tab always starts logged out (shows
+// login.html), while any tab that's already signed in keeps working
+// undisturbed, instead of one tab's login/logout silently affecting
+// every other tab open to the same site.
 // ---------------------------------------------------------
 const Session = {
-  get token() { return localStorage.getItem('ispb_token') || ''; },
-  set token(v) { v ? localStorage.setItem('ispb_token', v) : localStorage.removeItem('ispb_token'); },
-  get role() { return localStorage.getItem('ispb_role') || ''; },
-  set role(v) { v ? localStorage.setItem('ispb_role', v) : localStorage.removeItem('ispb_role'); },
-  get fullName() { return localStorage.getItem('ispb_fullname') || ''; },
-  set fullName(v) { v ? localStorage.setItem('ispb_fullname', v) : localStorage.removeItem('ispb_fullname'); },
+  get token() { return sessionStorage.getItem('ispb_token') || ''; },
+  set token(v) { v ? sessionStorage.setItem('ispb_token', v) : sessionStorage.removeItem('ispb_token'); },
+  get role() { return sessionStorage.getItem('ispb_role') || ''; },
+  set role(v) { v ? sessionStorage.setItem('ispb_role', v) : sessionStorage.removeItem('ispb_role'); },
+  get fullName() { return sessionStorage.getItem('ispb_fullname') || ''; },
+  set fullName(v) { v ? sessionStorage.setItem('ispb_fullname', v) : sessionStorage.removeItem('ispb_fullname'); },
   clear() {
-    localStorage.removeItem('ispb_token');
-    localStorage.removeItem('ispb_role');
-    localStorage.removeItem('ispb_fullname');
+    sessionStorage.removeItem('ispb_token');
+    sessionStorage.removeItem('ispb_role');
+    sessionStorage.removeItem('ispb_fullname');
   }
 };
 
