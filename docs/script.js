@@ -150,6 +150,19 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/** Wires up every .toggle-password button to show/hide its preceding password input. */
+function initPasswordToggles() {
+  document.querySelectorAll('.toggle-password').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = btn.previousElementSibling;
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.textContent = showing ? '👁' : '🙈';
+      btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+    });
+  });
+}
+
 // ===========================================================
 // PAGE DISPATCH
 // ===========================================================
@@ -181,6 +194,8 @@ function initLogin() {
   const form = document.getElementById('login-form');
   const errorEl = document.getElementById('login-error');
   const btn = document.getElementById('login-btn');
+
+  initPasswordToggles();
 
   // Role toggle is a visual cue only — the account's real role (from the
   // Users sheet) always decides where login actually lands; picking
