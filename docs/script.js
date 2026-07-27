@@ -13,6 +13,12 @@
 // update this to match its URL.
 const API_URL = 'https://script.google.com/macros/s/AKfycbwGEEoKKOVS72lWZ1J1V0MbgpU-3suDkET4cKUY7TvcniEhvwO5kp_NFhfp4LGOu5of/exec';
 
+// Required for PWA/TWA installability (Android "Add to Home Screen"
+// and the installable APK both need an active service worker).
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js').catch(() => {});
+}
+
 // ---------------------------------------------------------
 // Session helpers. sessionStorage on purpose (not localStorage) — it's
 // scoped per browser tab, not shared across every open tab of this
