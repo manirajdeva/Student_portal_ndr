@@ -338,6 +338,19 @@ function applySession(session) {
   document.querySelectorAll('[data-user-fullname]').forEach((el) => { el.textContent = session.fullName; });
 }
 
+/**
+ * Renders a single slot cell, including how many of the (up to
+ * CONFIG.MAX_BOOKINGS_PER_SLOT) bookings for that time are already
+ * taken — shared by the booking grid and the reschedule grid.
+ */
+function slotCellHtml(s) {
+  const clickable = s.status === 'Available';
+  return `<div class="slot-cell ${s.status.toLowerCase()}" ${clickable ? `data-time="${s.time}"` : ''}>
+    ${to12h(s.time)}<span class="tag">${s.status === 'Available' ? 'OPEN' : s.status.toUpperCase()}</span>
+    <span class="slot-count">${s.bookedCount}/${s.capacity} booked</span>
+  </div>`;
+}
+
 function loadSlotsForDate(dateStr) {
   const wrap = document.getElementById('slot-grid-wrap');
   wrap.innerHTML = '<p class="empty-state"><span class="spinner"></span> Loading slots...</p>';
@@ -348,12 +361,7 @@ function loadSlotsForDate(dateStr) {
       wrap.innerHTML = '<p class="empty-state">No slots for this date.</p>';
       return;
     }
-    wrap.innerHTML = '<div class="slot-grid">' + res.slots.map((s) => {
-      const clickable = s.status === 'Available';
-      return `<div class="slot-cell ${s.status.toLowerCase()}" ${clickable ? `data-time="${s.time}"` : ''}>
-        ${to12h(s.time)}<span class="tag">${s.status === 'Available' ? 'OPEN' : s.status.toUpperCase()}</span>
-      </div>`;
-    }).join('') + '</div>';
+    wrap.innerHTML = '<div class="slot-grid">' + res.slots.map(slotCellHtml).join('') + '</div>';
 
     wrap.querySelectorAll('.slot-cell[data-time]').forEach((cell) => {
       cell.addEventListener('click', () => openBookingModal(dateStr, cell.getAttribute('data-time')));
@@ -473,10 +481,7 @@ function loadRescheduleSlots(dateStr) {
   const wrap = document.getElementById('reschedule-slots');
   wrap.innerHTML = '<p class="empty-state"><span class="spinner"></span> Loading...</p>';
   api('getAvailableSlots', Session.token, dateStr).then((res) => {
-    wrap.innerHTML = '<div class="slot-grid">' + res.slots.map((s) => `
-      <div class="slot-cell ${s.status.toLowerCase()}" ${s.status === 'Available' ? `data-time="${s.time}"` : ''}>
-        ${to12h(s.time)}<span class="tag">${s.status === 'Available' ? 'OPEN' : s.status.toUpperCase()}</span>
-      </div>`).join('') + '</div>';
+    wrap.innerHTML = '<div class="slot-grid">' + res.slots.map(slotCellHtml).join('') + '</div>';
     wrap.querySelectorAll('.slot-cell[data-time]').forEach((cell) => {
       cell.addEventListener('click', () => {
         api('rescheduleMyBooking', Session.token, window.__rescheduleId, dateStr, cell.getAttribute('data-time'))

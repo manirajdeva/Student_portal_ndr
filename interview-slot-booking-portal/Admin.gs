@@ -48,7 +48,11 @@ function getDashboardStats(token) {
   const upcoming = confirmed.filter((b) => b['Interview Date'] >= today)
     .sort((a, b) => (a['Interview Date'] + a['Time Slot']).localeCompare(b['Interview Date'] + b['Time Slot']));
 
-  const availableSlots = slots.filter((s) => s.Date >= today && s.Status === 'Available' && !isPastDateTime(s.Date, s.Time));
+  const bookingCounts = getBookingCountMap();
+  const availableSlots = slots.filter((s) =>
+    s.Date >= today && s.Status !== 'Blocked' && !isPastDateTime(s.Date, s.Time) &&
+    (bookingCounts[s.Date + '|' + s.Time] || 0) < CONFIG.MAX_BOOKINGS_PER_SLOT
+  );
 
   return {
     totalStudents: totalStudents,
@@ -218,9 +222,12 @@ function adminEditBooking(token, bookingId, updates) {
 // ==================== HOLIDAYS / BLOCKED DATES ====================
 
 /**
- * Blocks a date: ensures slots exist for it, then marks every
- * non-booked slot as Blocked. Already-booked slots are left alone
- * (and reported back) so the admin can decide whether to cancel them.
+ * Blocks a date: ensures slots exist for it, then marks every slot as
+ * Blocked (which stops any NEW booking regardless of how many bookings
+ * it already has — see getBookingCountMap in Booking.gs, which derives
+ * availability from the Bookings sheet, independent of Slots.Status).
+ * Existing confirmed bookings on that date are left untouched and just
+ * reported back, so the admin can decide whether to cancel them.
  */
 function blockDate(token, dateStr) {
   requireRole(token, 'Admin');
@@ -233,23 +240,22 @@ function blockDate(token, dateStr) {
   const statusIdx = SCHEMA.Slots.indexOf('Status');
   const updatedIdx = SCHEMA.Slots.indexOf('UpdatedOn');
 
-  let blockedCount = 0, alreadyBookedCount = 0;
+  let blockedCount = 0;
   for (let r = 1; r < values.length; r++) {
     if (normalizeDateCell(values[r][dateIdx], 'Slots', 'Date') !== dateStr) continue;
-    const status = values[r][statusIdx];
-    if (status === 'Booked') {
-      alreadyBookedCount++;
-      continue;
-    }
+    if (values[r][statusIdx] === 'Blocked') continue;
     sheet.getRange(r + 1, statusIdx + 1).setValue('Blocked');
     sheet.getRange(r + 1, updatedIdx + 1).setValue(nowString());
     blockedCount++;
   }
 
+  const existingBookings = sheetToObjects(getSheet(CONFIG.SHEET_BOOKINGS))
+    .filter((b) => b.Status === 'Confirmed' && b['Interview Date'] === dateStr).length;
+
   return {
     success: true,
     message: 'Blocked ' + blockedCount + ' slot(s) on ' + dateStr +
-      (alreadyBookedCount ? ('. Note: ' + alreadyBookedCount + ' slot(s) already booked were left untouched.') : '.')
+      (existingBookings ? ('. Note: ' + existingBookings + ' existing confirmed booking(s) on that date were left untouched.') : '.')
   };
 }
 

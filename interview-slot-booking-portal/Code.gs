@@ -17,6 +17,7 @@ const CONFIG = {
   SLOT_START_HOUR: 7,   // 7:00 AM
   SLOT_END_HOUR: 22,    // 10:00 PM
   SLOT_INTERVAL_MIN: 30,
+  MAX_BOOKINGS_PER_SLOT: 2, // how many students can book the same date+time before it's Full
 
   ONE_ACTIVE_BOOKING_PER_STUDENT: false, // toggle the "one active booking" rule
 

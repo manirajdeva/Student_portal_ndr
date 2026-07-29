@@ -315,6 +315,7 @@ table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
 .slot-cell.booked, .slot-cell.past { background: var(--red-bg); color: #e0a093; opacity: 0.75; cursor: not-allowed; }
 .slot-cell.blocked { background: rgba(255,255,255,0.04); color: var(--muted); cursor: not-allowed; }
 .slot-cell .tag { display: block; font-size: 9px; letter-spacing: 0.1em; margin-top: 3px; }
+.slot-cell .slot-count { display: block; font-size: 9px; opacity: 0.75; margin-top: 2px; }
 
 /* ---------- Modal ---------- */
 .modal-backdrop {

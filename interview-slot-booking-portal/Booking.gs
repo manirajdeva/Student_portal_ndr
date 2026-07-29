@@ -53,25 +53,52 @@ function bulkGenerateSlots(token, startDate, endDate) {
 }
 
 /**
+ * Counts CONFIRMED bookings per "date|time" key across the whole
+ * Bookings sheet. Capacity (CONFIG.MAX_BOOKINGS_PER_SLOT) is enforced
+ * against this count rather than a single Slots.Status flag, since up
+ * to MAX_BOOKINGS_PER_SLOT students can now hold the same date+time.
+ */
+function getBookingCountMap() {
+  const bookings = sheetToObjects(getSheet(CONFIG.SHEET_BOOKINGS));
+  const counts = {};
+  bookings.forEach((b) => {
+    if (b.Status !== 'Confirmed') return;
+    const key = b['Interview Date'] + '|' + b['Time Slot'];
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+}
+
+/**
  * Returns the list of slots for a date. Slots only exist for a date once
  * the admin has explicitly generated them (Generate Slots tab / bulk
  * range) — this deliberately does NOT auto-create them just because a
  * student picked the date, so a date with no admin-generated slots
  * simply comes back empty ("No slots for this date.").
- * Each item: { time, status } where status is Available/Booked/Blocked/Past.
+ * Each item: { time, status, bookedCount, capacity } where status is
+ * Available/Booked(=full)/Blocked/Past, bookedCount is how many
+ * confirmed bookings currently hold that date+time, and capacity is
+ * CONFIG.MAX_BOOKINGS_PER_SLOT (how many bookings fit before it's full).
  */
 function getAvailableSlots(token, dateStr) {
   requireRole(token, null); // any logged-in user (student or admin)
   if (!dateStr) throw new Error('A date is required.');
 
   const sheet = getSheet(CONFIG.SHEET_SLOTS);
+  const bookingCounts = getBookingCountMap();
+  const capacity = CONFIG.MAX_BOOKINGS_PER_SLOT;
+
   const slots = sheetToObjects(sheet)
     .filter((s) => s.Date === dateStr)
     .sort((a, b) => a.Time.localeCompare(b.Time))
     .map((s) => {
-      let status = s.Status;
-      if (status === 'Available' && isPastDateTime(dateStr, s.Time)) status = 'Past';
-      return { time: s.Time, status: status };
+      const bookedCount = bookingCounts[s.Date + '|' + s.Time] || 0;
+      let status;
+      if (s.Status === 'Blocked') status = 'Blocked';
+      else if (isPastDateTime(dateStr, s.Time)) status = 'Past';
+      else if (bookedCount >= capacity) status = 'Booked';
+      else status = 'Available';
+      return { time: s.Time, status: status, bookedCount: bookedCount, capacity: capacity };
     });
 
   return { date: dateStr, slots: slots, isPast: isPastDate(dateStr) };
@@ -84,14 +111,20 @@ function getAvailableSlots(token, dateStr) {
 function getCalendarSummary(token, startDate, endDate) {
   requireRole(token, null);
   const sheet = getSheet(CONFIG.SHEET_SLOTS);
+  const bookingCounts = getBookingCountMap();
+  const capacity = CONFIG.MAX_BOOKINGS_PER_SLOT;
   const all = sheetToObjects(sheet).filter((s) => s.Date >= startDate && s.Date <= endDate);
   const byDate = {};
   all.forEach((s) => {
-    byDate[s.Date] = byDate[s.Date] || { available: 0, booked: 0, blocked: 0, total: 0 };
+    byDate[s.Date] = byDate[s.Date] || { available: 0, full: 0, blocked: 0, total: 0 };
     byDate[s.Date].total++;
-    if (s.Status === 'Available' && !isPastDateTime(s.Date, s.Time)) byDate[s.Date].available++;
-    else if (s.Status === 'Booked') byDate[s.Date].booked++;
-    else if (s.Status === 'Blocked') byDate[s.Date].blocked++;
+    if (s.Status === 'Blocked') {
+      byDate[s.Date].blocked++;
+    } else if (!isPastDateTime(s.Date, s.Time)) {
+      const bookedCount = bookingCounts[s.Date + '|' + s.Time] || 0;
+      if (bookedCount >= capacity) byDate[s.Date].full++;
+      else byDate[s.Date].available++;
+    }
   });
 
   const summary = {};
@@ -111,8 +144,10 @@ function getCalendarSummary(token, startDate, endDate) {
  * Books a slot for the logged-in student. Fully server-side validated:
  *  - session must be a Student
  *  - date/time must not be in the past
- *  - slot must currently be Available (re-checked inside a lock to
- *    prevent two students booking the same slot simultaneously)
+ *  - slot must not be Blocked, and must have fewer than
+ *    CONFIG.MAX_BOOKINGS_PER_SLOT confirmed bookings already (re-checked
+ *    inside a lock to prevent a race letting in one booking too many)
+ *  - a student can't hold two bookings for the exact same date+time
  *  - optionally enforces one-active-booking-per-student
  */
 function bookSlot(token, booking) {
@@ -137,10 +172,19 @@ function bookSlot(token, booking) {
     const slotValues = slotSheet.getRange(slotRow, 1, 1, SCHEMA.Slots.length).getValues()[0];
     const currentStatus = slotValues[SCHEMA.Slots.indexOf('Status')];
     if (currentStatus === 'Blocked') throw new Error('That date/time is blocked and not available for booking.');
-    if (currentStatus === 'Booked') throw new Error('Sorry — that slot was just booked by someone else. Please choose another.');
+
+    const bookingSheet = getSheet(CONFIG.SHEET_BOOKINGS);
+    const confirmedForSlot = sheetToObjects(bookingSheet).filter(
+      (b) => b.Status === 'Confirmed' && b['Interview Date'] === booking.date && b['Time Slot'] === booking.time
+    );
+    if (confirmedForSlot.length >= CONFIG.MAX_BOOKINGS_PER_SLOT) {
+      throw new Error('Sorry — that slot is fully booked (max ' + CONFIG.MAX_BOOKINGS_PER_SLOT + '). Please choose another.');
+    }
+    if (confirmedForSlot.some((b) => b.Username === session.username)) {
+      throw new Error('You already have a booking at that date and time.');
+    }
 
     if (CONFIG.ONE_ACTIVE_BOOKING_PER_STUDENT) {
-      const bookingSheet = getSheet(CONFIG.SHEET_BOOKINGS);
       const activeExisting = sheetToObjects(bookingSheet).find(
         (b) => b.Username === session.username && b.Status === 'Confirmed' && b['Interview Date'] >= todayStr()
       );
@@ -149,11 +193,7 @@ function bookSlot(token, booking) {
       }
     }
 
-    // Mark slot Booked
-    updateRowByHeaders(slotSheet, slotRow, SCHEMA.Slots, { Status: 'Booked', UpdatedOn: nowString() });
-
     // Append booking record
-    const bookingSheet = getSheet(CONFIG.SHEET_BOOKINGS);
     const bookingId = generateBookingId();
     bookingSheet.appendRow([
       bookingId,
@@ -222,7 +262,7 @@ function getMyBookings(token) {
     .map(stripRowMeta);
 }
 
-/** Student cancels their own upcoming booking; frees the slot back to Available. */
+/** Student cancels their own upcoming booking, freeing up a seat at that date+time. */
 function cancelMyBooking(token, bookingId) {
   const session = requireRole(token, 'Student');
   return cancelBookingInternal(bookingId, session.username, false);
@@ -255,15 +295,16 @@ function rescheduleMyBooking(token, bookingId, newDate, newTime) {
     const newSlotValues = slotSheet.getRange(newSlotRow, 1, 1, SCHEMA.Slots.length).getValues()[0];
     const newStatus = newSlotValues[SCHEMA.Slots.indexOf('Status')];
     if (newStatus === 'Blocked') throw new Error('That date/time is blocked.');
-    if (newStatus === 'Booked') throw new Error('That slot is already booked. Please choose another.');
 
-    // Free the old slot
-    const oldSlotRow = findSlotRow(slotSheet, record['Interview Date'], record['Time Slot']);
-    if (oldSlotRow !== -1) {
-      updateRowByHeaders(slotSheet, oldSlotRow, SCHEMA.Slots, { Status: 'Available', UpdatedOn: nowString() });
+    const confirmedForNewSlot = sheetToObjects(bookingSheet).filter(
+      (b) => b.Status === 'Confirmed' && b['Interview Date'] === newDate && b['Time Slot'] === newTime
+    );
+    if (confirmedForNewSlot.length >= CONFIG.MAX_BOOKINGS_PER_SLOT) {
+      throw new Error('That slot is fully booked (max ' + CONFIG.MAX_BOOKINGS_PER_SLOT + '). Please choose another.');
     }
-    // Reserve the new slot
-    updateRowByHeaders(slotSheet, newSlotRow, SCHEMA.Slots, { Status: 'Booked', UpdatedOn: nowString() });
+    if (confirmedForNewSlot.some((b) => b.Username === session.username && b['Booking ID'] !== bookingId)) {
+      throw new Error('You already have a booking at that date and time.');
+    }
 
     // Update the booking record in place
     updateRowByHeaders(bookingSheet, row, SCHEMA.Bookings, {
@@ -295,13 +336,10 @@ function cancelBookingInternal(bookingId, restrictToUsername, isAdmin) {
     return { success: true, message: 'Booking was already cancelled.' };
   }
 
+  // Slots.Status only tracks Available/Blocked now — availability is derived
+  // from counting Confirmed bookings (see getBookingCountMap), so cancelling
+  // just needs to flip the booking record; no Slots row to touch.
   updateRowByHeaders(bookingSheet, row, SCHEMA.Bookings, { Status: 'Cancelled' });
-
-  const slotSheet = getSheet(CONFIG.SHEET_SLOTS);
-  const slotRow = findSlotRow(slotSheet, record['Interview Date'], record['Time Slot']);
-  if (slotRow !== -1) {
-    updateRowByHeaders(slotSheet, slotRow, SCHEMA.Slots, { Status: 'Available', UpdatedOn: nowString() });
-  }
 
   return { success: true, message: 'Booking cancelled.' };
 }
