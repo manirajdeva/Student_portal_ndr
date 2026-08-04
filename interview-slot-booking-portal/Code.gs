@@ -101,6 +101,7 @@ const API_FUNCTIONS = {
   addStudent: addStudent,
   addAdmin: addAdmin,
   editStudent: editStudent,
+  resetPassword: resetPassword,
   deleteStudent: deleteStudent,
   setStudentStatus: setStudentStatus,
   listAllBookings: listAllBookings,

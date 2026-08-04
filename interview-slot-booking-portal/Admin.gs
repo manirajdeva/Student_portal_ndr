@@ -118,6 +118,23 @@ function addAdmin(token, admin) {
 }
 
 /**
+ * Resets any user's password, Admin or Student — there's no self-service
+ * "forgot password" flow, and editStudent only touches Student rows, so
+ * this is the only way to recover/rotate an Admin account's password.
+ */
+function resetPassword(token, username, newPassword) {
+  requireRole(token, 'Admin');
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error('New password must be at least 6 characters.');
+  }
+  const sheet = getSheet(CONFIG.SHEET_USERS);
+  const row = findRowIndexByColumnValue(sheet, 'Username', username);
+  if (row === -1) throw new Error('User not found.');
+  updateRowByHeaders(sheet, row, SCHEMA.Users, { PasswordHash: hashPassword(newPassword) });
+  return { success: true, message: 'Password updated for ' + username + '.' };
+}
+
+/**
  * Edits a student's full name / email, and optionally resets their
  * password (only when a non-empty new password is supplied).
  * Username and role are immutable via this endpoint.
