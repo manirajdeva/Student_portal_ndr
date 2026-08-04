@@ -44,7 +44,11 @@ clasp deploy -i <deploymentId> -d "description of this deploy"
 
 ### Sessions
 
-Sessions are stored server-side in `CacheService`, keyed by a random token returned from `login()`. `IDLE_TIMEOUT_SEC` (`Auth.gs`) is **120 seconds** and slides forward on every validated call — a logged-in user is only signed out after 2 minutes of no activity, not on a fixed schedule. The frontend keeps the token in `localStorage` and sends it with every API call.
+Sessions are stored server-side in `CacheService`, keyed by a random token returned from `login()`. The idle timeout (`IDLE_TIMEOUT_SEC` in `Auth.gs`) is role-dependent and slides forward on every validated call:
+- **Student**: 120 seconds — a shared/public device logs itself out quickly.
+- **Admin**: 21,600 seconds (6 hours, `CacheService`'s hard maximum — there's no "never expire" option). Paired with storing the Admin token in `sessionStorage` instead of `localStorage`, so in practice an admin session lasts until the browser tab is closed rather than timing out mid-use.
+
+Student tokens stay in `localStorage` (needed so the Android/TWA app survives Android killing its process between opens without logging the student out).
 
 ### Google Sheet schema
 

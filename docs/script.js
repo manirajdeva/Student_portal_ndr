@@ -20,25 +20,43 @@ if ('serviceWorker' in navigator) {
 }
 
 // ---------------------------------------------------------
-// Session helpers. localStorage on purpose (not sessionStorage) — the
-// Android app (a Trusted Web Activity) can have its underlying process
-// killed by Android between opens, which clears sessionStorage;
-// localStorage survives that, matching "stay logged in until I log
-// out" instead of silently signing the user out on every app restart.
-// (Trade-off: a brand-new browser tab will now also start already
-// logged in, since localStorage is shared across tabs of the same site.)
+// Session helpers. Storage is role-dependent:
+//  - Student -> localStorage. The Android app (a Trusted Web Activity)
+//    can have its underlying process killed by Android between opens,
+//    which clears sessionStorage; localStorage survives that, matching
+//    "stay logged in until I log out". (Trade-off: a brand-new browser
+//    tab also starts already logged in, since localStorage is shared
+//    across tabs of the same site.)
+//  - Admin -> sessionStorage, so the session lasts exactly as long as
+//    the tab stays open and disappears the moment it's closed, rather
+//    than persisting like the student one does. Paired with a much
+//    longer idle timeout server-side (see Auth.gs) so an open admin
+//    tab is never auto-logged-out mid-session.
+// role must be set before token/fullName in any given login flow,
+// since their setters look at the just-written role to pick a store.
 // ---------------------------------------------------------
+function storageForRole(role) { return role === 'Admin' ? sessionStorage : localStorage; }
+
+const KEYS = ['ispb_token', 'ispb_role', 'ispb_fullname'];
+
 const Session = {
-  get token() { return localStorage.getItem('ispb_token') || ''; },
-  set token(v) { v ? localStorage.setItem('ispb_token', v) : localStorage.removeItem('ispb_token'); },
-  get role() { return localStorage.getItem('ispb_role') || ''; },
-  set role(v) { v ? localStorage.setItem('ispb_role', v) : localStorage.removeItem('ispb_role'); },
-  get fullName() { return localStorage.getItem('ispb_fullname') || ''; },
-  set fullName(v) { v ? localStorage.setItem('ispb_fullname', v) : localStorage.removeItem('ispb_fullname'); },
+  get token() { return sessionStorage.getItem('ispb_token') || localStorage.getItem('ispb_token') || ''; },
+  set token(v) {
+    sessionStorage.removeItem('ispb_token'); localStorage.removeItem('ispb_token');
+    if (v) storageForRole(this.role).setItem('ispb_token', v);
+  },
+  get role() { return sessionStorage.getItem('ispb_role') || localStorage.getItem('ispb_role') || ''; },
+  set role(v) {
+    sessionStorage.removeItem('ispb_role'); localStorage.removeItem('ispb_role');
+    if (v) storageForRole(v).setItem('ispb_role', v);
+  },
+  get fullName() { return sessionStorage.getItem('ispb_fullname') || localStorage.getItem('ispb_fullname') || ''; },
+  set fullName(v) {
+    sessionStorage.removeItem('ispb_fullname'); localStorage.removeItem('ispb_fullname');
+    if (v) storageForRole(this.role).setItem('ispb_fullname', v);
+  },
   clear() {
-    localStorage.removeItem('ispb_token');
-    localStorage.removeItem('ispb_role');
-    localStorage.removeItem('ispb_fullname');
+    KEYS.forEach((k) => { sessionStorage.removeItem(k); localStorage.removeItem(k); });
   }
 };
 
@@ -191,8 +209,8 @@ function initLogin() {
             res.role + ' above and try again.';
           return;
         }
-        Session.token = res.token;
         Session.role = res.role;
+        Session.token = res.token;
         Session.fullName = res.fullName;
         goHome();
       })
@@ -333,8 +351,8 @@ function handleBootstrapError(err) {
 }
 
 function applySession(session) {
-  Session.fullName = session.fullName;
   Session.role = session.role;
+  Session.fullName = session.fullName;
   document.querySelectorAll('[data-user-fullname]').forEach((el) => { el.textContent = session.fullName; });
 }
 

@@ -3,12 +3,16 @@
  * ------------------------------------------------------------------
  * Username/password authentication and session handling.
  * Sessions are stored server-side in CacheService, keyed by a random
- * token. IDLE_TIMEOUT_SEC is a *sliding* window: every validated
+ * token. The idle timeout is a *sliding* window: every validated
  * request refreshes the token's expiry, so an active user is never
- * cut off mid-use, but 120 seconds with no requests at all lets the
- * cache entry expire on its own and the token stops working. The
- * client keeps the token in localStorage (see script.js) and passes
- * it as a parameter on every API call.
+ * cut off mid-use. Students get a short 120-second window (so a
+ * shared/public device logs itself out quickly); Admins get
+ * CacheService's maximum of 6 hours, sliding on every request, which
+ * in practice means an admin session outlives the browser tab rather
+ * than timing out mid-session — script.js also keeps the Admin token
+ * in sessionStorage (cleared when the tab closes) instead of
+ * localStorage, so closing the tab is what actually ends it, not idle
+ * time.
  *
  * NOTE ON SECURITY: this is a lightweight scheme suitable for an
  * internal tool. Passwords are SHA-256 hashed with a per-deployment
@@ -36,7 +40,13 @@ function hashPassword(password) {
 
 // Session is invalidated after this many seconds with no requests at all.
 // Every successful validateSession() call slides this window forward.
-const IDLE_TIMEOUT_SEC = 120;
+// Admin uses CacheService's hard maximum (21600s / 6h) — there is no
+// "never expire" option on Apps Script's cache, so this is as close as
+// it gets to "stays logged in until the tab closes."
+const IDLE_TIMEOUT_SEC = { Student: 120, Admin: 21600 };
+function idleTimeoutFor(role) {
+  return IDLE_TIMEOUT_SEC[role] || IDLE_TIMEOUT_SEC.Student;
+}
 
 /**
  * Validates username/password and creates a session.
@@ -62,7 +72,7 @@ function login(username, password) {
 
   const token = Utilities.getUuid();
   const sessionData = { username: user.Username, role: user.Role, fullName: user.FullName };
-  CacheService.getScriptCache().put(token, JSON.stringify(sessionData), IDLE_TIMEOUT_SEC);
+  CacheService.getScriptCache().put(token, JSON.stringify(sessionData), idleTimeoutFor(user.Role));
 
   return {
     success: true,
@@ -83,12 +93,14 @@ function validateSession(token) {
   const cache = CacheService.getScriptCache();
   const cached = cache.get(token);
   if (!cached) return null;
-  cache.put(token, cached, IDLE_TIMEOUT_SEC); // slide the idle window forward
+  let session;
   try {
-    return JSON.parse(cached);
+    session = JSON.parse(cached);
   } catch (e) {
     return null;
   }
+  cache.put(token, cached, idleTimeoutFor(session.role)); // slide the idle window forward
+  return session;
 }
 
 /** Invalidates a session token (logout). */
